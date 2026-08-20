@@ -9,13 +9,29 @@ import {
   Trash2,
   Sparkles,
   Image as ImageIcon,
-  Send,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { MediaType } from '../types/timeline';
 
+const PRESET_EFFECTS = [
+  { name: '🎬 Teal & Orange', category: 'Cinematic', filter: { hueRotate: 30, contrast: 125, saturation: 140, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '🎥 Vintage 1970s', category: 'Retro', filter: { sepia: 75, brightness: 110, contrast: 105, saturation: 100, hueRotate: 0, blur: 0 } },
+  { name: '🖤 Moody B&W', category: 'Monochrome', filter: { saturation: 0, contrast: 130, brightness: 95, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '🌆 Cyberpunk Neon', category: 'Vibrant', filter: { hueRotate: 190, saturation: 180, contrast: 120, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '🌅 Golden Hour', category: 'Warm', filter: { sepia: 30, saturation: 150, brightness: 105, contrast: 100, hueRotate: 0, blur: 0 } },
+  { name: '❄️ Cold Winter', category: 'Cool', filter: { hueRotate: 160, contrast: 110, saturation: 90, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '⚡ High Contrast', category: 'Action', filter: { contrast: 160, brightness: 105, saturation: 130, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '👾 VHS Retro', category: 'Glitch', filter: { hueRotate: 240, saturation: 200, contrast: 110, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '🔮 Dream Blur Glow', category: 'Soft', filter: { blur: 6, brightness: 115, saturation: 110, contrast: 100, sepia: 0, hueRotate: 0 } },
+  { name: '🌌 Vaporwave', category: 'Aesthetic', filter: { hueRotate: 280, saturation: 170, brightness: 105, contrast: 100, sepia: 0, blur: 0 } },
+  { name: '📼 Noir Cinema', category: 'Dark', filter: { saturation: 0, contrast: 160, brightness: 85, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '🌈 Psychedelic', category: 'Trippy', filter: { hueRotate: 120, saturation: 220, brightness: 110, contrast: 100, sepia: 0, blur: 0 } },
+  { name: '⚡ Faded Pastel', category: 'Pastel', filter: { contrast: 85, brightness: 115, saturation: 80, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '💎 Deep HDR', category: 'HDR', filter: { contrast: 150, saturation: 130, brightness: 90, sepia: 0, hueRotate: 0, blur: 0 } },
+];
+
 export const MediaLibrary: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'effects' | 'ai'>('text');
+  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'effects' | 'ai'>('effects');
   const [customText, setCustomText] = useState('My Custom Preferred Text');
 
   const {
@@ -78,7 +94,7 @@ export const MediaLibrary: React.FC = () => {
       duration: 5,
       text: {
         content: customText,
-        fontFamily: 'sans-serif',
+        fontFamily: 'Inter, sans-serif',
         fontSize: 48,
         color: '#00f2fe',
         backgroundColor: 'rgba(0,0,0,0.6)',
@@ -103,7 +119,7 @@ export const MediaLibrary: React.FC = () => {
       duration: 4,
       text: {
         content: templateName,
-        fontFamily: style.fontFamily || 'sans-serif',
+        fontFamily: style.fontFamily || 'Inter, sans-serif',
         fontSize: style.fontSize || 44,
         color: style.color || '#ffffff',
         backgroundColor: style.backgroundColor || 'transparent',
@@ -161,10 +177,38 @@ export const MediaLibrary: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* EFFECTS TAB */}
+        {activeTab === 'effects' && (
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+              14+ CapCut Trending Effects
+            </h3>
+            <div className="grid grid-cols-2 gap-2">
+              {PRESET_EFFECTS.map((fx, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl text-left cursor-pointer transition group"
+                  onClick={() => {
+                    const videoClipId = useTimelineStore.getState().selectedClipId;
+                    if (videoClipId) {
+                      useTimelineStore.getState().updateClipFilter(videoClipId, fx.filter);
+                    } else {
+                      alert('Please select a clip on the timeline first to apply effect!');
+                    }
+                  }}
+                >
+                  <Wand2 className="w-4 h-4 text-cyan-400 mb-1 group-hover:scale-110 transition-transform" />
+                  <div className="text-xs font-semibold text-gray-200 truncate">{fx.name}</div>
+                  <div className="text-[9px] text-cyan-400 font-medium mt-0.5">{fx.category}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* TEXT TAB */}
         {activeTab === 'text' && (
           <div className="space-y-4">
-            {/* Preferred Custom Text Input Box */}
             <div className="p-3 bg-dark-900/80 border border-cyan-500/40 rounded-xl space-y-2">
               <label className="block text-xs font-bold text-cyan-300 uppercase tracking-wider">
                 Add Preferred Custom Text
@@ -190,19 +234,19 @@ export const MediaLibrary: React.FC = () => {
               {[
                 {
                   name: '🔥 Trending Heading',
-                  style: { color: '#00f2fe', fontSize: 48, fontFamily: 'sans-serif', borderWidth: 2 },
+                  style: { color: '#00f2fe', fontSize: 48, fontFamily: 'Bebas Neue, sans-serif', borderWidth: 2 },
                 },
                 {
                   name: '✨ Subtitle Overlay',
-                  style: { color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.7)', fontSize: 32 },
+                  style: { color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.7)', fontSize: 32, fontFamily: 'Inter, sans-serif' },
                 },
                 {
                   name: '⚡ Cyberpunk Neon',
-                  style: { color: '#ff007f', borderColor: '#00f2fe', borderWidth: 2, fontSize: 52 },
+                  style: { color: '#ff007f', borderColor: '#00f2fe', borderWidth: 2, fontSize: 52, fontFamily: 'Anton, sans-serif' },
                 },
                 {
                   name: ' Minimal Title',
-                  style: { color: '#e2e8f0', fontSize: 36, fontFamily: 'serif' },
+                  style: { color: '#e2e8f0', fontSize: 36, fontFamily: 'Playfair Display, serif' },
                 },
               ].map((template, idx) => (
                 <button
@@ -334,38 +378,6 @@ export const MediaLibrary: React.FC = () => {
                   >
                     <Plus className="w-3.5 h-3.5" />
                   </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* EFFECTS TAB */}
-        {activeTab === 'effects' && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Trending Video Effects</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { name: 'Vintage Movie', filter: { sepia: 60, contrast: 110 } },
-                { name: 'Cyber Neon', filter: { hueRotate: 180, saturation: 160 } },
-                { name: 'Black & White', filter: { saturation: 0 } },
-                { name: 'Soft Blur Glow', filter: { blur: 4 } },
-              ].map((fx, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl text-center cursor-pointer transition"
-                  onClick={() => {
-                    const videoClipId = useTimelineStore.getState().selectedClipId;
-                    if (videoClipId) {
-                      useTimelineStore.getState().updateClipFilter(videoClipId, fx.filter);
-                    } else {
-                      alert('Please select a clip on the timeline first to apply filter!');
-                    }
-                  }}
-                >
-                  <Wand2 className="w-5 h-5 text-cyan-400 mx-auto mb-1.5" />
-                  <div className="text-xs font-medium text-gray-200">{fx.name}</div>
-                  <div className="text-[9px] text-cyan-400 mt-1">Apply to selected clip</div>
                 </div>
               ))}
             </div>

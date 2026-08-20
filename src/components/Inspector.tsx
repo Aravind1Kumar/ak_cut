@@ -8,8 +8,45 @@ import {
   Scissors,
   Copy,
   Trash2,
+  Wand2,
+  Sparkles,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
+
+const FONT_OPTIONS = [
+  { name: 'Inter (Modern)', value: 'Inter, sans-serif' },
+  { name: 'Montserrat (Bold)', value: 'Montserrat, sans-serif' },
+  { name: 'Poppins (Trendy)', value: 'Poppins, sans-serif' },
+  { name: 'Bebas Neue (Cinematic)', value: "'Bebas Neue', sans-serif" },
+  { name: 'Anton (Ultra Thick)', value: 'Anton, sans-serif' },
+  { name: 'Oswald (Condensed)', value: 'Oswald, sans-serif' },
+  { name: 'Impact (Meme)', value: 'Impact, sans-serif' },
+  { name: 'Playfair Display (Luxury)', value: "'Playfair Display', serif" },
+  { name: 'Merriweather (Classic)', value: 'Merriweather, serif' },
+  { name: 'Pacifico (Script)', value: 'Pacifico, cursive' },
+  { name: 'Lobster (Retro Brush)', value: 'Lobster, cursive' },
+  { name: 'Permanent Marker (Graffiti)', value: "'Permanent Marker', cursive" },
+  { name: 'Caveat (Casual Handwriting)', value: 'Caveat, cursive' },
+  { name: 'Roboto (Clean)', value: 'Roboto, sans-serif' },
+  { name: 'Monospace (Code)', value: 'monospace' },
+];
+
+const PRESET_EFFECTS = [
+  { name: '🎬 Teal & Orange', filter: { hueRotate: 30, contrast: 125, saturation: 140, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '🎥 Vintage 1970s', filter: { sepia: 75, brightness: 110, contrast: 105, saturation: 100, hueRotate: 0, blur: 0 } },
+  { name: '🖤 Moody B&W', filter: { saturation: 0, contrast: 130, brightness: 95, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '🌆 Cyberpunk Neon', filter: { hueRotate: 190, saturation: 180, contrast: 120, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '🌅 Golden Hour', filter: { sepia: 30, saturation: 150, brightness: 105, contrast: 100, hueRotate: 0, blur: 0 } },
+  { name: '❄️ Cold Winter', filter: { hueRotate: 160, contrast: 110, saturation: 90, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '⚡ High Contrast', filter: { contrast: 160, brightness: 105, saturation: 130, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '👾 VHS Retro', filter: { hueRotate: 240, saturation: 200, contrast: 110, brightness: 100, sepia: 0, blur: 0 } },
+  { name: '🔮 Dream Blur Glow', filter: { blur: 6, brightness: 115, saturation: 110, contrast: 100, sepia: 0, hueRotate: 0 } },
+  { name: '🌌 Vaporwave', filter: { hueRotate: 280, saturation: 170, brightness: 105, contrast: 100, sepia: 0, blur: 0 } },
+  { name: '📼 Noir Cinema', filter: { saturation: 0, contrast: 160, brightness: 85, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '🌈 Psychedelic', filter: { hueRotate: 120, saturation: 220, brightness: 110, contrast: 100, sepia: 0, blur: 0 } },
+  { name: '⚡ Faded Pastel', filter: { contrast: 85, brightness: 115, saturation: 80, sepia: 0, hueRotate: 0, blur: 0 } },
+  { name: '💎 Deep HDR', filter: { contrast: 150, saturation: 130, brightness: 90, sepia: 0, hueRotate: 0, blur: 0 } },
+];
 
 export const Inspector: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'transform' | 'filters' | 'audio' | 'text'>('transform');
@@ -38,7 +75,6 @@ export const Inspector: React.FC = () => {
     }
   }
 
-  // Auto-switch active tab to 'text' when a text clip is selected!
   useEffect(() => {
     if (selectedClip?.type === 'text') {
       setActiveTab('text');
@@ -55,7 +91,7 @@ export const Inspector: React.FC = () => {
         </div>
         <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-1">Inspector Panel</h3>
         <p className="text-[11px] text-gray-500 max-w-[180px]">
-          Select any clip on the timeline to edit its properties, transforms, filters, and custom text.
+          Select any clip on the timeline to edit its properties, fonts, filters, and effects.
         </p>
       </aside>
     );
@@ -102,7 +138,7 @@ export const Inspector: React.FC = () => {
             ? [{ id: 'text', label: 'Custom Text', icon: <Type className="w-3.5 h-3.5" /> }]
             : []),
           { id: 'transform', label: 'Basic', icon: <Maximize className="w-3.5 h-3.5" /> },
-          { id: 'filters', label: 'Filters', icon: <Sun className="w-3.5 h-3.5" /> },
+          { id: 'filters', label: 'Effects & FX', icon: <Sun className="w-3.5 h-3.5" /> },
           { id: 'audio', label: 'Audio', icon: <Volume2 className="w-3.5 h-3.5" /> },
         ].map((tab) => (
           <button
@@ -138,6 +174,22 @@ export const Inspector: React.FC = () => {
                 }}
                 className="w-full bg-dark-800 border border-dark-600 focus:border-cyan-500 rounded-lg p-2 text-xs text-gray-100 outline-none resize-none"
               />
+            </div>
+
+            {/* Font Family Selector */}
+            <div>
+              <label className="block text-gray-400 mb-1 font-bold">Font Style & Family</label>
+              <select
+                value={text.fontFamily}
+                onChange={(e) => updateClipText(selectedClip.id, { fontFamily: e.target.value })}
+                className="w-full bg-dark-900 border border-dark-600 focus:border-cyan-500 rounded-lg p-2 text-xs text-cyan-300 font-semibold outline-none cursor-pointer"
+              >
+                {FONT_OPTIONS.map((f) => (
+                  <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -254,9 +306,30 @@ export const Inspector: React.FC = () => {
           </div>
         )}
 
-        {/* FILTERS TAB */}
+        {/* FILTERS & EFFECTS TAB */}
         {activeTab === 'filters' && (
           <div className="space-y-4">
+            <div>
+              <label className="block text-gray-400 mb-2 font-bold uppercase tracking-wider text-[10px]">
+                1-Click CapCut Effect Presets
+              </label>
+              <div className="grid grid-cols-2 gap-1.5 max-h-44 overflow-y-auto pr-1">
+                {PRESET_EFFECTS.map((fx, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => updateClipFilter(selectedClip.id, fx.filter)}
+                    className="p-2 bg-dark-900/80 hover:bg-cyan-500/20 border border-dark-600 hover:border-cyan-500/50 rounded-lg text-left transition group"
+                  >
+                    <div className="text-[11px] font-medium text-gray-200 group-hover:text-cyan-300 truncate">
+                      {fx.name}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="h-[1px] bg-dark-700 my-2" />
+
             <div>
               <div className="flex justify-between text-gray-400 mb-1 font-medium">
                 <span>Brightness</span>
