@@ -5,17 +5,19 @@ import {
   Music,
   Type,
   Wand2,
-  Subtitles,
   Plus,
   Trash2,
   Sparkles,
   Image as ImageIcon,
+  Send,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { MediaType } from '../types/timeline';
 
 export const MediaLibrary: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'effects' | 'ai'>('media');
+  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'effects' | 'ai'>('text');
+  const [customText, setCustomText] = useState('My Custom Preferred Text');
+
   const {
     tracks,
     mediaAssets,
@@ -39,7 +41,6 @@ export const MediaLibrary: React.FC = () => {
       const type: MediaType = isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'video';
       const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
 
-      // 1. Add to Media Assets List
       const assetId = addMediaAsset({
         name: file.name,
         type,
@@ -48,7 +49,6 @@ export const MediaLibrary: React.FC = () => {
         size: sizeFormatted,
       });
 
-      // 2. Automatically add to Timeline
       let targetTrack = tracks.find((t) => t.type === type);
       let targetTrackId = targetTrack?.id || addTrack(type);
 
@@ -66,16 +66,28 @@ export const MediaLibrary: React.FC = () => {
     e.target.value = '';
   };
 
-  const handleAddAssetToTimeline = (asset: typeof mediaAssets[0]) => {
-    let targetTrack = tracks.find((t) => t.type === asset.type);
-    let targetTrackId = targetTrack?.id || addTrack(asset.type);
+  const handleAddCustomText = () => {
+    if (!customText.trim()) return;
 
-    const clipId = addClipToTrack(targetTrackId, {
-      name: asset.name,
-      type: asset.type,
-      src: asset.src,
-      duration: asset.duration,
-      sourceDuration: asset.duration,
+    let textTrack = tracks.find((t) => t.type === 'text');
+    let textTrackId = textTrack?.id || addTrack('text', 'Text Track');
+
+    const clipId = addClipToTrack(textTrackId, {
+      name: customText,
+      type: 'text',
+      duration: 5,
+      text: {
+        content: customText,
+        fontFamily: 'sans-serif',
+        fontSize: 48,
+        color: '#00f2fe',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderColor: '#ffffff',
+        borderWidth: 1,
+        alignment: 'center',
+        bold: true,
+        italic: false,
+      },
     });
 
     setSelectedClipId(clipId);
@@ -83,7 +95,7 @@ export const MediaLibrary: React.FC = () => {
 
   const handleAddTextTemplate = (templateName: string, style: any) => {
     let textTrack = tracks.find((t) => t.type === 'text');
-    let textTrackId = textTrack?.id || addTrack('text');
+    let textTrackId = textTrack?.id || addTrack('text', 'Text Track');
 
     const clipId = addClipToTrack(textTrackId, {
       name: templateName,
@@ -108,7 +120,7 @@ export const MediaLibrary: React.FC = () => {
 
   const handleAddStockAudio = (title: string, src: string) => {
     let audioTrack = tracks.find((t) => t.type === 'audio');
-    let audioTrackId = audioTrack?.id || addTrack('audio');
+    let audioTrackId = audioTrack?.id || addTrack('audio', 'Audio Track');
 
     const clipId = addClipToTrack(audioTrackId, {
       name: title,
@@ -149,6 +161,66 @@ export const MediaLibrary: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* TEXT TAB */}
+        {activeTab === 'text' && (
+          <div className="space-y-4">
+            {/* Preferred Custom Text Input Box */}
+            <div className="p-3 bg-dark-900/80 border border-cyan-500/40 rounded-xl space-y-2">
+              <label className="block text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                Add Preferred Custom Text
+              </label>
+              <textarea
+                rows={2}
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder="Type your preferred text here..."
+                className="w-full bg-dark-800 border border-dark-600 focus:border-cyan-500 rounded-lg p-2 text-xs text-gray-100 outline-none resize-none"
+              />
+              <button
+                onClick={handleAddCustomText}
+                className="w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-lg shadow flex items-center justify-center space-x-1.5 transition transform active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Custom Text to Timeline</span>
+              </button>
+            </div>
+
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Text Presets & Templates</h3>
+            <div className="grid grid-cols-1 gap-2">
+              {[
+                {
+                  name: '🔥 Trending Heading',
+                  style: { color: '#00f2fe', fontSize: 48, fontFamily: 'sans-serif', borderWidth: 2 },
+                },
+                {
+                  name: '✨ Subtitle Overlay',
+                  style: { color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.7)', fontSize: 32 },
+                },
+                {
+                  name: '⚡ Cyberpunk Neon',
+                  style: { color: '#ff007f', borderColor: '#00f2fe', borderWidth: 2, fontSize: 52 },
+                },
+                {
+                  name: ' Minimal Title',
+                  style: { color: '#e2e8f0', fontSize: 36, fontFamily: 'serif' },
+                },
+              ].map((template, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleAddTextTemplate(template.name.replace(/[^a-zA-Z0-9 ]/g, ''), template.style)}
+                  className="flex items-center justify-between p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl transition text-left group"
+                >
+                  <div>
+                    <div className="text-xs font-semibold text-gray-200">{template.name}</div>
+                    <div className="text-[10px] text-gray-500">Click to add to timeline</div>
+                  </div>
+                  <Plus className="w-4 h-4 text-cyan-400 group-hover:scale-125 transition-transform" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* MEDIA TAB */}
         {activeTab === 'media' && (
           <div className="space-y-4">
@@ -200,7 +272,17 @@ export const MediaLibrary: React.FC = () => {
 
                       <div className="flex items-center space-x-1">
                         <button
-                          onClick={() => handleAddAssetToTimeline(asset)}
+                          onClick={() => {
+                            let targetTrack = tracks.find((t) => t.type === asset.type);
+                            let targetTrackId = targetTrack?.id || addTrack(asset.type);
+                            addClipToTrack(targetTrackId, {
+                              name: asset.name,
+                              type: asset.type,
+                              src: asset.src,
+                              duration: asset.duration,
+                              sourceDuration: asset.duration,
+                            });
+                          }}
                           title="Add to Timeline"
                           className="p-1.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white rounded-md transition"
                         >
@@ -219,45 +301,6 @@ export const MediaLibrary: React.FC = () => {
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-        )}
-
-        {/* TEXT TAB */}
-        {activeTab === 'text' && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Text Templates</h3>
-            <div className="grid grid-cols-1 gap-2">
-              {[
-                {
-                  name: '🔥 Trending Heading',
-                  style: { color: '#00f2fe', fontSize: 48, fontFamily: 'sans-serif', borderWidth: 2 },
-                },
-                {
-                  name: '✨ Subtitle Overlay',
-                  style: { color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.7)', fontSize: 32 },
-                },
-                {
-                  name: '⚡ Cyberpunk Neon',
-                  style: { color: '#ff007f', borderColor: '#00f2fe', borderWidth: 2, fontSize: 52 },
-                },
-                {
-                  name: ' Minimal Title',
-                  style: { color: '#e2e8f0', fontSize: 36, fontFamily: 'serif' },
-                },
-              ].map((template, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleAddTextTemplate(template.name.replace(/[^a-zA-Z0-9 ]/g, ''), template.style)}
-                  className="flex items-center justify-between p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl transition text-left group"
-                >
-                  <div>
-                    <div className="text-xs font-semibold text-gray-200">{template.name}</div>
-                    <div className="text-[10px] text-gray-500">Click to add overlay to timeline</div>
-                  </div>
-                  <Plus className="w-4 h-4 text-cyan-400 group-hover:scale-125 transition-transform" />
-                </button>
-              ))}
             </div>
           </div>
         )}

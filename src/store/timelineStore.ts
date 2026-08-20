@@ -59,6 +59,9 @@ interface TimelineState {
   history: Track[][];
   historyIndex: number;
 
+  // Helpers
+  getProjectDuration: () => number;
+
   // Actions
   setIsPlaying: (playing: boolean) => void;
   setCurrentTime: (time: number) => void;
@@ -138,15 +141,28 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   ],
 
   tracks: [
-    { id: 'track-text-1', name: 'Text & Subtitles', type: 'text', muted: false, locked: false, hidden: false, clips: [] },
-    { id: 'track-video-1', name: 'Main Video Track', type: 'video', muted: false, locked: false, hidden: false, clips: [] },
-    { id: 'track-audio-1', name: 'Audio Track', type: 'audio', muted: false, locked: false, hidden: false, clips: [] },
+    { id: 'track-text-1', name: 'Text Track 1', type: 'text', muted: false, locked: false, hidden: false, clips: [] },
+    { id: 'track-video-1', name: 'Video Track 1', type: 'video', muted: false, locked: false, hidden: false, clips: [] },
+    { id: 'track-audio-1', name: 'Audio Track 1', type: 'audio', muted: false, locked: false, hidden: false, clips: [] },
   ],
   selectedClipId: null,
   copiedClip: null,
 
   history: [],
   historyIndex: -1,
+
+  // Calculate actual project end duration dynamically
+  getProjectDuration: () => {
+    const { tracks } = get();
+    let maxEnd = 0;
+    tracks.forEach((track) => {
+      track.clips.forEach((clip) => {
+        const end = clip.startTime + clip.duration;
+        if (end > maxEnd) maxEnd = end;
+      });
+    });
+    return maxEnd > 0 ? maxEnd : 10;
+  },
 
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
@@ -257,7 +273,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       trackId,
       name: clipData.name || 'Untitled Clip',
       type: clipData.type || 'video',
-      startTime: clipData.startTime ?? 0,
+      startTime: clipData.startTime ?? get().currentTime,
       duration: clipData.duration || 5,
       mediaOffset: clipData.mediaOffset || 0,
       sourceDuration: clipData.sourceDuration || 5,
@@ -267,7 +283,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       filter: { ...DEFAULT_FILTER, ...clipData.filter },
       audio: { ...DEFAULT_AUDIO, ...clipData.audio },
       text: clipData.text || (clipData.type === 'text' ? {
-        content: 'Title Text',
+        content: clipData.name || 'Your Preferred Text',
         fontFamily: 'sans-serif',
         fontSize: 48,
         color: '#ffffff',
@@ -480,14 +496,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       if (clip && clip.type === 'video') {
         get().pushHistory();
 
-        // Mute video clip audio
         get().updateClipAudio(clip.id, { muted: true });
 
-        // Find or create Audio Track
         let audioTrack = tracks.find((t) => t.type === 'audio');
         let audioTrackId = audioTrack?.id || get().addTrack('audio', 'Extracted Audio');
 
-        // Add detached audio clip
         get().addClipToTrack(audioTrackId, {
           name: `${clip.name} (Audio)`,
           type: 'audio',
@@ -541,7 +554,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       tracks: [
         {
           id: demoTextTrackId,
-          name: 'Text & Subtitles',
+          name: 'Text Track 1',
           type: 'text',
           muted: false,
           locked: false,
@@ -579,7 +592,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         },
         {
           id: demoVideoTrackId,
-          name: 'Main Video Track',
+          name: 'Video Track 1',
           type: 'video',
           muted: false,
           locked: false,

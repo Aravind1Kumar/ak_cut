@@ -6,11 +6,9 @@ import {
   SkipForward,
   Volume2,
   VolumeX,
-  Maximize,
-  Move,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { AspectRatio, Clip } from '../types/timeline';
+import { Clip } from '../types/timeline';
 
 export const PreviewPlayer: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -27,12 +25,12 @@ export const PreviewPlayer: React.FC = () => {
     aspectRatio,
     tracks,
     selectedClipId,
+    getProjectDuration,
     setIsPlaying,
     setCurrentTime,
     updateClipTransform,
   } = useTimelineStore();
 
-  // Find currently selected clip
   let selectedClip: Clip | null = null;
   if (selectedClipId) {
     for (const track of tracks) {
@@ -44,7 +42,7 @@ export const PreviewPlayer: React.FC = () => {
     }
   }
 
-  // Playback Loop
+  // Playback Loop & Auto-Stop at end of project
   useEffect(() => {
     let lastTime = performance.now();
 
@@ -52,8 +50,9 @@ export const PreviewPlayer: React.FC = () => {
       if (isPlaying) {
         const delta = (now - lastTime) / 1000;
         const nextTime = currentTime + delta;
+        const projectEndDuration = getProjectDuration();
 
-        if (nextTime >= maxTimelineDuration) {
+        if (nextTime >= projectEndDuration) {
           setCurrentTime(0);
           setIsPlaying(false);
         } else {
@@ -77,9 +76,9 @@ export const PreviewPlayer: React.FC = () => {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, currentTime, maxTimelineDuration]);
+  }, [isPlaying, currentTime, getProjectDuration]);
 
-  // Render Frame to Canvas
+  // Render Frame & Play Sound
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -119,17 +118,27 @@ export const PreviewPlayer: React.FC = () => {
       });
     });
 
-    // Sort by track layer
     visibleClips.sort((a, b) => {
       const trackAIdx = tracks.findIndex((t) => t.id === a.trackId);
       const trackBIdx = tracks.findIndex((t) => t.id === b.trackId);
       return trackBIdx - trackAIdx;
     });
 
+    // Pause audio/video elements of clips no longer active
+    activeVideoElementsRef.current.forEach((videoEl, clipId) => {
+      const isActive = visibleClips.some((c) => c.id === clipId);
+      if (!isActive || !isPlaying) {
+        if (!videoEl.paused) videoEl.pause();
+      }
+    });
+
     visibleClips.forEach((clip) => {
+      const parentTrack = tracks.find((t) => t.id === clip.trackId);
+      const isMuted = parentTrack?.muted || clip.audio.muted;
+
       ctx.save();
 
-      // Center transform
+      // Transform
       const centerX = width / 2 + (clip.transform.x / 100) * width;
       const centerY = height / 2 + (clip.transform.y / 100) * height;
       ctx.translate(centerX, centerY);
@@ -140,24 +149,39 @@ export const PreviewPlayer: React.FC = () => {
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
 
-      if (clip.type === 'video' && clip.src) {
+      if ((clip.type === 'video' || clip.type === 'audio') && clip.src) {
         let videoEl = activeVideoElementsRef.current.get(clip.id);
         if (!videoEl) {
           videoEl = document.createElement('video');
           videoEl.src = clip.src;
           videoEl.crossOrigin = 'anonymous';
-          videoEl.muted = clip.audio.muted;
           activeVideoElementsRef.current.set(clip.id, videoEl);
         }
 
+        // Configure Sound Volume & Mute State
+        videoEl.muted = isMuted;
+        videoEl.volume = Math.max(0, Math.min(1, clip.audio.volume));
+
         const mediaTime = (currentTime - clip.startTime) * clip.speed + clip.mediaOffset;
-        if (Math.abs(videoEl.currentTime - mediaTime) > 0.1) {
+        if (Math.abs(videoEl.currentTime - mediaTime) > 0.15) {
           videoEl.currentTime = mediaTime;
         }
 
-        try {
-          ctx.drawImage(videoEl, -width / 2, -height / 2, width, height);
-        } catch (e) {}
+        if (isPlaying) {
+          if (videoEl.paused) {
+            videoEl.play().catch(() => {});
+          }
+        } else {
+          if (!videoEl.paused) {
+            videoEl.pause();
+          }
+        }
+
+        if (clip.type === 'video') {
+          try {
+            ctx.drawImage(videoEl, -width / 2, -height / 2, width, height);
+          } catch (e) {}
+        }
       } else if (clip.type === 'text' && clip.text) {
         const text = clip.text;
         ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 1.5}px ${text.fontFamily}`;
@@ -186,7 +210,7 @@ export const PreviewPlayer: React.FC = () => {
         ctx.fillText(text.content, 0, 0);
       }
 
-      // Render Selection Bounding Box if selected
+      // Selection bounding box
       if (clip.id === selectedClipId) {
         ctx.strokeStyle = '#00f2fe';
         ctx.lineWidth = 4;
@@ -196,9 +220,8 @@ export const PreviewPlayer: React.FC = () => {
 
       ctx.restore();
     });
-  }, [currentTime, aspectRatio, tracks, selectedClipId]);
+  }, [currentTime, aspectRatio, tracks, selectedClipId, isPlaying]);
 
-  // Handle Drag on Canvas to Move Selected Clip
   const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!selectedClip) return;
     setIsDraggingCanvas(true);
@@ -239,6 +262,8 @@ export const PreviewPlayer: React.FC = () => {
     setCurrentTime(currentTime + frames * frameTime);
   };
 
+  const displayDuration = getProjectDuration();
+
   return (
     <main className="flex-1 flex flex-col bg-dark-900 overflow-hidden relative select-none">
       {/* Canvas Viewport */}
@@ -261,7 +286,7 @@ export const PreviewPlayer: React.FC = () => {
         {/* Timecode Display */}
         <div className="font-mono text-xs text-cyan-400 font-bold bg-dark-900/80 px-3 py-1.5 rounded-md border border-dark-700">
           {formatTimecode(currentTime)}{' '}
-          <span className="text-gray-500 font-normal">/ {formatTimecode(maxTimelineDuration)}</span>
+          <span className="text-gray-500 font-normal">/ {formatTimecode(displayDuration)}</span>
         </div>
 
         {/* Playback Controls */}

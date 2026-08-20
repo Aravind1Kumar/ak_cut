@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Sliders,
   Sun,
   Volume2,
   Type,
   Maximize,
-  RotateCw,
-  Eye,
-  Zap,
   Scissors,
   Copy,
   Trash2,
@@ -30,7 +27,6 @@ export const Inspector: React.FC = () => {
     deleteSelectedClip,
   } = useTimelineStore();
 
-  // Find currently selected clip
   let selectedClip = null;
   if (selectedClipId) {
     for (const track of tracks) {
@@ -42,6 +38,15 @@ export const Inspector: React.FC = () => {
     }
   }
 
+  // Auto-switch active tab to 'text' when a text clip is selected!
+  useEffect(() => {
+    if (selectedClip?.type === 'text') {
+      setActiveTab('text');
+    } else if (selectedClip) {
+      setActiveTab('transform');
+    }
+  }, [selectedClipId, selectedClip?.type]);
+
   if (!selectedClip) {
     return (
       <aside className="w-72 bg-dark-800 border-l border-dark-700 p-6 flex flex-col items-center justify-center text-center select-none z-20">
@@ -50,7 +55,7 @@ export const Inspector: React.FC = () => {
         </div>
         <h3 className="text-xs font-bold text-gray-300 uppercase tracking-wider mb-1">Inspector Panel</h3>
         <p className="text-[11px] text-gray-500 max-w-[180px]">
-          Select any clip on the timeline to edit its properties, transforms, filters, and effects.
+          Select any clip on the timeline to edit its properties, transforms, filters, and custom text.
         </p>
       </aside>
     );
@@ -60,7 +65,7 @@ export const Inspector: React.FC = () => {
 
   return (
     <aside className="w-80 bg-dark-800 border-l border-dark-700 flex flex-col h-full select-none z-20">
-      {/* Header & Quick Action Buttons */}
+      {/* Header & Quick Actions */}
       <div className="p-3 border-b border-dark-700 bg-dark-900/40 flex items-center justify-between">
         <div className="text-xs font-bold text-gray-200 truncate max-w-[120px]">
           {selectedClip.name}
@@ -93,12 +98,12 @@ export const Inspector: React.FC = () => {
       {/* Tabs */}
       <div className="flex border-b border-dark-700 bg-dark-900/20 p-1">
         {[
+          ...(selectedClip.type === 'text'
+            ? [{ id: 'text', label: 'Custom Text', icon: <Type className="w-3.5 h-3.5" /> }]
+            : []),
           { id: 'transform', label: 'Basic', icon: <Maximize className="w-3.5 h-3.5" /> },
           { id: 'filters', label: 'Filters', icon: <Sun className="w-3.5 h-3.5" /> },
           { id: 'audio', label: 'Audio', icon: <Volume2 className="w-3.5 h-3.5" /> },
-          ...(selectedClip.type === 'text'
-            ? [{ id: 'text', label: 'Text', icon: <Type className="w-3.5 h-3.5" /> }]
-            : []),
         ].map((tab) => (
           <button
             key={tab.id}
@@ -117,186 +122,21 @@ export const Inspector: React.FC = () => {
 
       {/* Properties Controls */}
       <div className="flex-1 overflow-y-auto p-4 space-y-5 text-xs">
-        {/* TRANSFORM TAB */}
-        {activeTab === 'transform' && (
-          <div className="space-y-4">
-            {/* Scale */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Scale</span>
-                <span className="text-cyan-400">{Math.round(transform.scale * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="3.0"
-                step="0.05"
-                value={transform.scale}
-                onChange={(e) => updateClipTransform(selectedClip.id, { scale: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-
-            {/* Rotation */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Rotation</span>
-                <span className="text-cyan-400">{transform.rotation}°</span>
-              </div>
-              <input
-                type="range"
-                min="-180"
-                max="180"
-                step="1"
-                value={transform.rotation}
-                onChange={(e) => updateClipTransform(selectedClip.id, { rotation: parseInt(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-
-            {/* Opacity */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Opacity</span>
-                <span className="text-cyan-400">{Math.round(transform.opacity * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                value={transform.opacity}
-                onChange={(e) => updateClipTransform(selectedClip.id, { opacity: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-
-            {/* Speed Multiplier */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Speed Curve</span>
-                <span className="text-cyan-400">{speed}x</span>
-              </div>
-              <div className="grid grid-cols-4 gap-1.5 mt-1">
-                {[0.5, 1.0, 1.5, 2.0].map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => updateClip(selectedClip.id, { speed: s })}
-                    className={`py-1 rounded text-[11px] font-semibold border ${
-                      speed === s
-                        ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
-                        : 'bg-dark-700/50 border-dark-600 text-gray-400 hover:bg-dark-700'
-                    }`}
-                  >
-                    {s}x
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* FILTERS TAB */}
-        {activeTab === 'filters' && (
-          <div className="space-y-4">
-            {/* Brightness */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Brightness</span>
-                <span className="text-cyan-400">{filter.brightness}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={filter.brightness}
-                onChange={(e) => updateClipFilter(selectedClip.id, { brightness: parseInt(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-
-            {/* Contrast */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Contrast</span>
-                <span className="text-cyan-400">{filter.contrast}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={filter.contrast}
-                onChange={(e) => updateClipFilter(selectedClip.id, { contrast: parseInt(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-
-            {/* Saturation */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Saturation</span>
-                <span className="text-cyan-400">{filter.saturation}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={filter.saturation}
-                onChange={(e) => updateClipFilter(selectedClip.id, { saturation: parseInt(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-
-            {/* Blur */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Blur</span>
-                <span className="text-cyan-400">{filter.blur}px</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="20"
-                value={filter.blur}
-                onChange={(e) => updateClipFilter(selectedClip.id, { blur: parseInt(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* AUDIO TAB */}
-        {activeTab === 'audio' && (
-          <div className="space-y-4">
-            {/* Volume */}
-            <div>
-              <div className="flex justify-between text-gray-400 mb-1 font-medium">
-                <span>Volume</span>
-                <span className="text-cyan-400">{Math.round(audio.volume * 100)}%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="2.0"
-                step="0.05"
-                value={audio.volume}
-                onChange={(e) => updateClipAudio(selectedClip.id, { volume: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-              />
-            </div>
-          </div>
-        )}
-
         {/* TEXT TAB */}
         {activeTab === 'text' && text && (
           <div className="space-y-4">
-            <div>
-              <label className="block text-gray-400 mb-1 font-medium">Text Content</label>
+            <div className="p-3 bg-dark-900/80 border border-cyan-500/40 rounded-xl space-y-1.5">
+              <label className="block text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                Edit Preferred Text
+              </label>
               <textarea
-                rows={2}
+                rows={3}
                 value={text.content}
-                onChange={(e) => updateClipText(selectedClip.id, { content: e.target.value })}
-                className="w-full bg-dark-900 border border-dark-600 focus:border-cyan-500 rounded-lg p-2 text-gray-200 outline-none resize-none"
+                onChange={(e) => {
+                  updateClipText(selectedClip.id, { content: e.target.value });
+                  updateClip(selectedClip.id, { name: e.target.value });
+                }}
+                className="w-full bg-dark-800 border border-dark-600 focus:border-cyan-500 rounded-lg p-2 text-xs text-gray-100 outline-none resize-none"
               />
             </div>
 
@@ -327,7 +167,7 @@ export const Inspector: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-gray-400 mb-1 font-medium">Background</label>
+                <label className="block text-gray-400 mb-1 font-medium">Background Color</label>
                 <input
                   type="color"
                   value={text.backgroundColor === 'transparent' ? '#000000' : text.backgroundColor}
@@ -335,6 +175,167 @@ export const Inspector: React.FC = () => {
                   className="w-full h-8 bg-dark-900 border border-dark-600 rounded cursor-pointer p-0.5"
                 />
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* TRANSFORM TAB */}
+        {activeTab === 'transform' && (
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Scale</span>
+                <span className="text-cyan-400">{Math.round(transform.scale * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="3.0"
+                step="0.05"
+                value={transform.scale}
+                onChange={(e) => updateClipTransform(selectedClip.id, { scale: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Rotation</span>
+                <span className="text-cyan-400">{transform.rotation}°</span>
+              </div>
+              <input
+                type="range"
+                min="-180"
+                max="180"
+                step="1"
+                value={transform.rotation}
+                onChange={(e) => updateClipTransform(selectedClip.id, { rotation: parseInt(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Opacity</span>
+                <span className="text-cyan-400">{Math.round(transform.opacity * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={transform.opacity}
+                onChange={(e) => updateClipTransform(selectedClip.id, { opacity: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Speed Curve</span>
+                <span className="text-cyan-400">{speed}x</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5 mt-1">
+                {[0.5, 1.0, 1.5, 2.0].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => updateClip(selectedClip.id, { speed: s })}
+                    className={`py-1 rounded text-[11px] font-semibold border ${
+                      speed === s
+                        ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
+                        : 'bg-dark-700/50 border-dark-600 text-gray-400 hover:bg-dark-700'
+                    }`}
+                  >
+                    {s}x
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* FILTERS TAB */}
+        {activeTab === 'filters' && (
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Brightness</span>
+                <span className="text-cyan-400">{filter.brightness}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={filter.brightness}
+                onChange={(e) => updateClipFilter(selectedClip.id, { brightness: parseInt(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Contrast</span>
+                <span className="text-cyan-400">{filter.contrast}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={filter.contrast}
+                onChange={(e) => updateClipFilter(selectedClip.id, { contrast: parseInt(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Saturation</span>
+                <span className="text-cyan-400">{filter.saturation}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="200"
+                value={filter.saturation}
+                onChange={(e) => updateClipFilter(selectedClip.id, { saturation: parseInt(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
+            </div>
+
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Blur</span>
+                <span className="text-cyan-400">{filter.blur}px</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="20"
+                value={filter.blur}
+                onChange={(e) => updateClipFilter(selectedClip.id, { blur: parseInt(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* AUDIO TAB */}
+        {activeTab === 'audio' && (
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between text-gray-400 mb-1 font-medium">
+                <span>Volume</span>
+                <span className="text-cyan-400">{Math.round(audio.volume * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="2.0"
+                step="0.05"
+                value={audio.volume}
+                onChange={(e) => updateClipAudio(selectedClip.id, { volume: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+              />
             </div>
           </div>
         )}
