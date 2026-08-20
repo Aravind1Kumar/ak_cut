@@ -1,5 +1,16 @@
 import { create } from 'zustand';
-import { Track, Clip, MediaType, AspectRatio, TransformProps, FilterProps, AudioProps, TextProps } from '../types/timeline';
+import {
+  Track,
+  Clip,
+  MediaType,
+  AspectRatio,
+  TransformProps,
+  FilterProps,
+  AudioProps,
+  TextProps,
+  MediaAsset,
+  TransitionProps,
+} from '../types/timeline';
 
 const DEFAULT_TRANSFORM: TransformProps = {
   x: 0,
@@ -32,11 +43,17 @@ interface TimelineState {
   maxTimelineDuration: number;
   fps: number;
   aspectRatio: AspectRatio;
-  zoomLevel: number; // Pixels per second
+  zoomLevel: number;
+  snappingEnabled: boolean;
+  rippleDeleteEnabled: boolean;
 
-  // Data
+  // Media Library Assets
+  mediaAssets: MediaAsset[];
+
+  // Tracks & Clips
   tracks: Track[];
   selectedClipId: string | null;
+  copiedClip: Clip | null;
 
   // History
   history: Track[][];
@@ -48,56 +65,113 @@ interface TimelineState {
   setZoomLevel: (zoom: number) => void;
   setAspectRatio: (ratio: AspectRatio) => void;
   setSelectedClipId: (id: string | null) => void;
+  setSnappingEnabled: (enabled: boolean) => void;
+  setRippleDeleteEnabled: (enabled: boolean) => void;
 
-  // Track & Clip Management
-  addTrack: (type: MediaType) => string;
+  // Media Asset Actions
+  addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>) => string;
+  deleteMediaAsset: (assetId: string) => void;
+
+  // Track Actions
+  addTrack: (type: MediaType, name?: string) => string;
+  deleteTrack: (trackId: string) => void;
+  toggleTrackMute: (trackId: string) => void;
+  toggleTrackHidden: (trackId: string) => void;
+  toggleTrackLocked: (trackId: string) => void;
+
+  // Clip Actions
   addClipToTrack: (trackId: string, clipData: Partial<Clip>) => string;
   updateClip: (clipId: string, updates: Partial<Clip>) => void;
   updateClipTransform: (clipId: string, transform: Partial<TransformProps>) => void;
   updateClipFilter: (clipId: string, filter: Partial<FilterProps>) => void;
   updateClipAudio: (clipId: string, audio: Partial<AudioProps>) => void;
   updateClipText: (clipId: string, text: Partial<TextProps>) => void;
+  updateClipTransition: (clipId: string, transition: Partial<TransitionProps>) => void;
 
   splitSelectedClip: () => void;
   deleteSelectedClip: () => void;
   duplicateSelectedClip: () => void;
+  detachAudioFromSelectedClip: () => void;
+
+  // Clipboard
+  copySelectedClip: () => void;
+  pasteClipAtPlayhead: () => void;
 
   // Undo / Redo
   pushHistory: () => void;
   undo: () => void;
   redo: () => void;
 
-  // Initial Demo Data
+  // Demo Project
   loadDemoProject: () => void;
 }
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
   isPlaying: false,
   currentTime: 0,
-  maxTimelineDuration: 60, // 60 seconds initial
+  maxTimelineDuration: 60,
   fps: 30,
   aspectRatio: '16:9',
-  zoomLevel: 40, // 40px per second
+  zoomLevel: 40,
+  snappingEnabled: true,
+  rippleDeleteEnabled: false,
+
+  mediaAssets: [
+    {
+      id: 'asset-sample-1',
+      name: 'Big Buck Bunny',
+      type: 'video',
+      src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+      duration: 10,
+      size: '15 MB',
+      createdAt: Date.now(),
+    },
+    {
+      id: 'asset-sample-2',
+      name: 'Elephants Dream',
+      type: 'video',
+      src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+      duration: 10,
+      size: '18 MB',
+      createdAt: Date.now(),
+    },
+  ],
 
   tracks: [
-    { id: 'track-text-1', name: 'Text Track', type: 'text', muted: false, locked: false, hidden: false, clips: [] },
-    { id: 'track-video-1', name: 'Main Video', type: 'video', muted: false, locked: false, hidden: false, clips: [] },
+    { id: 'track-text-1', name: 'Text & Subtitles', type: 'text', muted: false, locked: false, hidden: false, clips: [] },
+    { id: 'track-video-1', name: 'Main Video Track', type: 'video', muted: false, locked: false, hidden: false, clips: [] },
     { id: 'track-audio-1', name: 'Audio Track', type: 'audio', muted: false, locked: false, hidden: false, clips: [] },
   ],
   selectedClipId: null,
+  copiedClip: null,
 
   history: [],
   historyIndex: -1,
 
   setIsPlaying: (playing) => set({ isPlaying: playing }),
-
   setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
-
   setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(200, zoom)) }),
-
   setAspectRatio: (ratio) => set({ aspectRatio: ratio }),
-
   setSelectedClipId: (id) => set({ selectedClipId: id }),
+  setSnappingEnabled: (enabled) => set({ snappingEnabled: enabled }),
+  setRippleDeleteEnabled: (enabled) => set({ rippleDeleteEnabled: enabled }),
+
+  addMediaAsset: (assetData) => {
+    const id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newAsset: MediaAsset = {
+      ...assetData,
+      id,
+      createdAt: Date.now(),
+    };
+    set((state) => ({ mediaAssets: [newAsset, ...state.mediaAssets] }));
+    return id;
+  },
+
+  deleteMediaAsset: (assetId) => {
+    set((state) => ({
+      mediaAssets: state.mediaAssets.filter((a) => a.id !== assetId),
+    }));
+  },
 
   pushHistory: () => {
     const { tracks, history, historyIndex } = get();
@@ -131,11 +205,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     }
   },
 
-  addTrack: (type) => {
+  addTrack: (type, name) => {
     get().pushHistory();
+    const count = get().tracks.filter((t) => t.type === type).length + 1;
     const newTrack: Track = {
       id: `track-${type}-${Date.now()}`,
-      name: `${type.charAt(0).toUpperCase() + type.slice(1)} Track`,
+      name: name || `${type.charAt(0).toUpperCase() + type.slice(1)} Track ${count}`,
       type,
       muted: false,
       locked: false,
@@ -144,6 +219,34 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     };
     set((state) => ({ tracks: [newTrack, ...state.tracks] }));
     return newTrack.id;
+  },
+
+  deleteTrack: (trackId) => {
+    get().pushHistory();
+    set((state) => ({
+      tracks: state.tracks.filter((t) => t.id !== trackId),
+      selectedClipId: state.selectedClipId && state.tracks.find((t) => t.id === trackId)?.clips.some((c) => c.id === state.selectedClipId)
+        ? null
+        : state.selectedClipId,
+    }));
+  },
+
+  toggleTrackMute: (trackId) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, muted: !t.muted } : t)),
+    }));
+  },
+
+  toggleTrackHidden: (trackId) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, hidden: !t.hidden } : t)),
+    }));
+  },
+
+  toggleTrackLocked: (trackId) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, locked: !t.locked } : t)),
+    }));
   },
 
   addClipToTrack: (trackId, clipData) => {
@@ -192,7 +295,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   updateClip: (clipId, updates) => {
-    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
@@ -255,6 +357,25 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     }));
   },
 
+  updateClipTransition: (clipId, transitionUpdates) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId
+            ? {
+                ...clip,
+                transition: {
+                  type: transitionUpdates.type || 'fade',
+                  duration: transitionUpdates.duration || 0.5,
+                },
+              }
+            : clip
+        ),
+      })),
+    }));
+  },
+
   splitSelectedClip: () => {
     const { selectedClipId, currentTime, tracks } = get();
     if (!selectedClipId) return;
@@ -273,7 +394,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
     if (!targetClip || !targetTrackId) return;
 
-    // Check if playhead is strictly inside the clip
     if (currentTime > targetClip.startTime && currentTime < targetClip.startTime + targetClip.duration) {
       get().pushHistory();
 
@@ -337,7 +457,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         const duplicatedClip: Clip = {
           ...JSON.parse(JSON.stringify(clip)),
           id: dupId,
-          startTime: clip.startTime + clip.duration + 0.2, // slight offset after original
+          startTime: clip.startTime + clip.duration + 0.2,
         };
 
         set((state) => ({
@@ -351,42 +471,77 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     }
   },
 
+  detachAudioFromSelectedClip: () => {
+    const { selectedClipId, tracks } = get();
+    if (!selectedClipId) return;
+
+    for (const track of tracks) {
+      const clip = track.clips.find((c) => c.id === selectedClipId);
+      if (clip && clip.type === 'video') {
+        get().pushHistory();
+
+        // Mute video clip audio
+        get().updateClipAudio(clip.id, { muted: true });
+
+        // Find or create Audio Track
+        let audioTrack = tracks.find((t) => t.type === 'audio');
+        let audioTrackId = audioTrack?.id || get().addTrack('audio', 'Extracted Audio');
+
+        // Add detached audio clip
+        get().addClipToTrack(audioTrackId, {
+          name: `${clip.name} (Audio)`,
+          type: 'audio',
+          src: clip.src,
+          startTime: clip.startTime,
+          duration: clip.duration,
+          mediaOffset: clip.mediaOffset,
+          sourceDuration: clip.sourceDuration,
+        });
+
+        break;
+      }
+    }
+  },
+
+  copySelectedClip: () => {
+    const { selectedClipId, tracks } = get();
+    if (!selectedClipId) return;
+
+    for (const track of tracks) {
+      const clip = track.clips.find((c) => c.id === selectedClipId);
+      if (clip) {
+        set({ copiedClip: JSON.parse(JSON.stringify(clip)) });
+        break;
+      }
+    }
+  },
+
+  pasteClipAtPlayhead: () => {
+    const { copiedClip, currentTime, tracks } = get();
+    if (!copiedClip) return;
+
+    get().pushHistory();
+
+    let targetTrack = tracks.find((t) => t.type === copiedClip.type);
+    let targetTrackId = targetTrack?.id || get().addTrack(copiedClip.type);
+
+    const pastedClipId = get().addClipToTrack(targetTrackId, {
+      ...copiedClip,
+      startTime: currentTime,
+    });
+
+    set({ selectedClipId: pastedClipId });
+  },
+
   loadDemoProject: () => {
     const demoVideoTrackId = 'track-video-1';
     const demoTextTrackId = 'track-text-1';
-
-    const videoClip: Partial<Clip> = {
-      name: 'Sample Cinematic Video',
-      type: 'video',
-      startTime: 0,
-      duration: 10,
-      src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    };
-
-    const textClip: Partial<Clip> = {
-      name: 'Intro Title',
-      type: 'text',
-      startTime: 1,
-      duration: 5,
-      text: {
-        content: 'AK CUT VIDEO EDITOR',
-        fontFamily: 'sans-serif',
-        fontSize: 42,
-        color: '#00f2fe',
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        borderColor: '#ffffff',
-        borderWidth: 2,
-        alignment: 'center',
-        bold: true,
-        italic: false,
-      },
-    };
 
     set({
       tracks: [
         {
           id: demoTextTrackId,
-          name: 'Text & Titles',
+          name: 'Text & Subtitles',
           type: 'text',
           muted: false,
           locked: false,
@@ -424,7 +579,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         },
         {
           id: demoVideoTrackId,
-          name: 'Main Video',
+          name: 'Main Video Track',
           type: 'video',
           muted: false,
           locked: false,

@@ -1,12 +1,13 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   Play,
   Pause,
   SkipBack,
   SkipForward,
-  Maximize2,
   Volume2,
   VolumeX,
+  Maximize,
+  Move,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { AspectRatio, Clip } from '../types/timeline';
@@ -16,15 +17,32 @@ export const PreviewPlayer: React.FC = () => {
   const animationFrameRef = useRef<number | null>(null);
   const activeVideoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
 
+  const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number; initialX: number; initialY: number } | null>(null);
+
   const {
     isPlaying,
     currentTime,
     maxTimelineDuration,
     aspectRatio,
     tracks,
+    selectedClipId,
     setIsPlaying,
     setCurrentTime,
+    updateClipTransform,
   } = useTimelineStore();
+
+  // Find currently selected clip
+  let selectedClip: Clip | null = null;
+  if (selectedClipId) {
+    for (const track of tracks) {
+      const c = track.clips.find((clip) => clip.id === selectedClipId);
+      if (c) {
+        selectedClip = c;
+        break;
+      }
+    }
+  }
 
   // Playback Loop
   useEffect(() => {
@@ -68,7 +86,6 @@ export const PreviewPlayer: React.FC = () => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas dimensions based on aspect ratio
     let width = 1280;
     let height = 720;
     if (aspectRatio === '9:16') {
@@ -91,7 +108,7 @@ export const PreviewPlayer: React.FC = () => {
     ctx.fillStyle = '#0a0a0c';
     ctx.fillRect(0, 0, width, height);
 
-    // Filter visible clips active at current time
+    // Active clips
     const visibleClips: Clip[] = [];
     tracks.forEach((track) => {
       if (track.hidden) return;
@@ -102,8 +119,7 @@ export const PreviewPlayer: React.FC = () => {
       });
     });
 
-    // Sort by track order (render bottom tracks first, top tracks on top)
-    // Reverse tracks so video is under text
+    // Sort by track layer
     visibleClips.sort((a, b) => {
       const trackAIdx = tracks.findIndex((t) => t.id === a.trackId);
       const trackBIdx = tracks.findIndex((t) => t.id === b.trackId);
@@ -113,7 +129,7 @@ export const PreviewPlayer: React.FC = () => {
     visibleClips.forEach((clip) => {
       ctx.save();
 
-      // Transform
+      // Center transform
       const centerX = width / 2 + (clip.transform.x / 100) * width;
       const centerY = height / 2 + (clip.transform.y / 100) * height;
       ctx.translate(centerX, centerY);
@@ -121,7 +137,6 @@ export const PreviewPlayer: React.FC = () => {
       ctx.scale(clip.transform.scale, clip.transform.scale);
       ctx.globalAlpha = clip.transform.opacity;
 
-      // Filter string
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
 
@@ -131,7 +146,7 @@ export const PreviewPlayer: React.FC = () => {
           videoEl = document.createElement('video');
           videoEl.src = clip.src;
           videoEl.crossOrigin = 'anonymous';
-          videoEl.muted = true;
+          videoEl.muted = clip.audio.muted;
           activeVideoElementsRef.current.set(clip.id, videoEl);
         }
 
@@ -142,9 +157,7 @@ export const PreviewPlayer: React.FC = () => {
 
         try {
           ctx.drawImage(videoEl, -width / 2, -height / 2, width, height);
-        } catch (e) {
-          // Video element not ready
-        }
+        } catch (e) {}
       } else if (clip.type === 'text' && clip.text) {
         const text = clip.text;
         ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 1.5}px ${text.fontFamily}`;
@@ -173,20 +186,56 @@ export const PreviewPlayer: React.FC = () => {
         ctx.fillText(text.content, 0, 0);
       }
 
+      // Render Selection Bounding Box if selected
+      if (clip.id === selectedClipId) {
+        ctx.strokeStyle = '#00f2fe';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([8, 8]);
+        ctx.strokeRect(-width / 2, -height / 2, width, height);
+      }
+
       ctx.restore();
     });
-  }, [currentTime, aspectRatio, tracks]);
+  }, [currentTime, aspectRatio, tracks, selectedClipId]);
 
-  // Format Timecode HH:MM:SS:FF
+  // Handle Drag on Canvas to Move Selected Clip
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!selectedClip) return;
+    setIsDraggingCanvas(true);
+    setDragStart({
+      x: e.clientX,
+      y: e.clientY,
+      initialX: selectedClip.transform.x,
+      initialY: selectedClip.transform.y,
+    });
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!isDraggingCanvas || !dragStart || !selectedClip || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const deltaX = ((e.clientX - dragStart.x) / rect.width) * 100;
+    const deltaY = ((e.clientY - dragStart.y) / rect.height) * 100;
+
+    updateClipTransform(selectedClip.id, {
+      x: Math.round(dragStart.initialX + deltaX),
+      y: Math.round(dragStart.initialY + deltaY),
+    });
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDraggingCanvas(false);
+    setDragStart(null);
+  };
+
   const formatTimecode = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    const ms = Math.floor((seconds % 1) * 30); // 30 FPS frame count
+    const ms = Math.floor((seconds % 1) * 30);
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
   };
 
   const handleStepFrame = (frames: number) => {
-    const frameTime = 1 / 30; // 30 fps
+    const frameTime = 1 / 30;
     setCurrentTime(currentTime + frames * frameTime);
   };
 
@@ -197,20 +246,25 @@ export const PreviewPlayer: React.FC = () => {
         <div className="relative shadow-2xl rounded-lg overflow-hidden border border-dark-700/60 max-h-full flex items-center justify-center">
           <canvas
             ref={canvasRef}
-            className="max-h-[55vh] max-w-full object-contain rounded bg-black"
+            onMouseDown={handleCanvasMouseDown}
+            onMouseMove={handleCanvasMouseMove}
+            onMouseUp={handleCanvasMouseUp}
+            className={`max-h-[55vh] max-w-full object-contain rounded bg-black ${
+              selectedClip ? 'cursor-move' : 'cursor-default'
+            }`}
           />
         </div>
       </div>
 
       {/* Playback Control Bar */}
       <div className="h-12 bg-dark-800 border-t border-dark-700 px-6 flex items-center justify-between z-10">
-        {/* Left: Timecode Display */}
+        {/* Timecode Display */}
         <div className="font-mono text-xs text-cyan-400 font-bold bg-dark-900/80 px-3 py-1.5 rounded-md border border-dark-700">
           {formatTimecode(currentTime)}{' '}
           <span className="text-gray-500 font-normal">/ {formatTimecode(maxTimelineDuration)}</span>
         </div>
 
-        {/* Center: Playback Controls */}
+        {/* Playback Controls */}
         <div className="flex items-center space-x-3">
           <button
             onClick={() => handleStepFrame(-1)}
@@ -236,7 +290,6 @@ export const PreviewPlayer: React.FC = () => {
           </button>
         </div>
 
-        {/* Right: Fullscreen / Video Stats */}
         <div className="flex items-center space-x-2">
           <span className="text-[11px] font-semibold text-gray-400 bg-dark-700/50 px-2 py-1 rounded">
             30 FPS

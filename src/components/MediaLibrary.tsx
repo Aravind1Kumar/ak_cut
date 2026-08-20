@@ -8,16 +8,23 @@ import {
   Subtitles,
   Plus,
   Trash2,
-  Play,
-  Volume2,
   Sparkles,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { MediaType } from '../types/timeline';
 
 export const MediaLibrary: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'effects' | 'ai'>('media');
-  const { tracks, addClipToTrack, addTrack, setSelectedClipId } = useTimelineStore();
+  const {
+    tracks,
+    mediaAssets,
+    addMediaAsset,
+    deleteMediaAsset,
+    addClipToTrack,
+    addTrack,
+    setSelectedClipId,
+  } = useTimelineStore();
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -30,16 +37,21 @@ export const MediaLibrary: React.FC = () => {
       const isImage = file.type.startsWith('image/');
 
       const type: MediaType = isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'video';
+      const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
 
-      // Find or create track for this type
+      // 1. Add to Media Assets List
+      const assetId = addMediaAsset({
+        name: file.name,
+        type,
+        src: url,
+        duration: 8,
+        size: sizeFormatted,
+      });
+
+      // 2. Automatically add to Timeline
       let targetTrack = tracks.find((t) => t.type === type);
-      let targetTrackId = targetTrack?.id;
+      let targetTrackId = targetTrack?.id || addTrack(type);
 
-      if (!targetTrackId) {
-        targetTrackId = addTrack(type);
-      }
-
-      // Add to timeline
       const clipId = addClipToTrack(targetTrackId, {
         name: file.name,
         type,
@@ -54,13 +66,24 @@ export const MediaLibrary: React.FC = () => {
     e.target.value = '';
   };
 
+  const handleAddAssetToTimeline = (asset: typeof mediaAssets[0]) => {
+    let targetTrack = tracks.find((t) => t.type === asset.type);
+    let targetTrackId = targetTrack?.id || addTrack(asset.type);
+
+    const clipId = addClipToTrack(targetTrackId, {
+      name: asset.name,
+      type: asset.type,
+      src: asset.src,
+      duration: asset.duration,
+      sourceDuration: asset.duration,
+    });
+
+    setSelectedClipId(clipId);
+  };
+
   const handleAddTextTemplate = (templateName: string, style: any) => {
     let textTrack = tracks.find((t) => t.type === 'text');
-    let textTrackId = textTrack?.id;
-
-    if (!textTrackId) {
-      textTrackId = addTrack('text');
-    }
+    let textTrackId = textTrack?.id || addTrack('text');
 
     const clipId = addClipToTrack(textTrackId, {
       name: templateName,
@@ -85,11 +108,7 @@ export const MediaLibrary: React.FC = () => {
 
   const handleAddStockAudio = (title: string, src: string) => {
     let audioTrack = tracks.find((t) => t.type === 'audio');
-    let audioTrackId = audioTrack?.id;
-
-    if (!audioTrackId) {
-      audioTrackId = addTrack('audio');
-    }
+    let audioTrackId = audioTrack?.id || addTrack('audio');
 
     const clipId = addClipToTrack(audioTrackId, {
       name: title,
@@ -147,43 +166,59 @@ export const MediaLibrary: React.FC = () => {
             </label>
 
             <div>
-              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Sample Clips</h3>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  {
-                    name: 'Big Buck Bunny',
-                    src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-                    duration: 10,
-                  },
-                  {
-                    name: 'Elephants Dream',
-                    src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-                    duration: 10,
-                  },
-                ].map((sample, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      let vt = tracks.find((t) => t.type === 'video')?.id || addTrack('video');
-                      addClipToTrack(vt, {
-                        name: sample.name,
-                        type: 'video',
-                        src: sample.src,
-                        duration: sample.duration,
-                        sourceDuration: sample.duration,
-                      });
-                    }}
-                    className="p-2.5 bg-dark-700/50 hover:bg-dark-700 border border-dark-600 rounded-lg text-left transition group"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <Film className="w-4 h-4 text-cyan-400" />
-                      <Plus className="w-3.5 h-3.5 text-gray-400 group-hover:text-cyan-400" />
-                    </div>
-                    <div className="text-xs font-medium text-gray-200 truncate">{sample.name}</div>
-                    <div className="text-[10px] text-gray-500">Video • {sample.duration}s</div>
-                  </button>
-                ))}
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Project Media</h3>
+                <span className="text-[10px] text-gray-500">{mediaAssets.length} assets</span>
               </div>
+
+              {mediaAssets.length === 0 ? (
+                <p className="text-[11px] text-gray-500 text-center py-4">No media imported yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {mediaAssets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className="flex items-center justify-between p-2.5 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl transition group"
+                    >
+                      <div className="flex items-center space-x-2.5 truncate max-w-[170px]">
+                        <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center shrink-0">
+                          {asset.type === 'video' ? (
+                            <Film className="w-4 h-4 text-cyan-400" />
+                          ) : asset.type === 'audio' ? (
+                            <Music className="w-4 h-4 text-green-400" />
+                          ) : (
+                            <ImageIcon className="w-4 h-4 text-amber-400" />
+                          )}
+                        </div>
+                        <div className="truncate">
+                          <div className="text-xs font-medium text-gray-200 truncate">{asset.name}</div>
+                          <div className="text-[10px] text-gray-500">
+                            {asset.type.toUpperCase()} • {asset.duration}s
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handleAddAssetToTimeline(asset)}
+                          title="Add to Timeline"
+                          className="p-1.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white rounded-md transition"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => deleteMediaAsset(asset.id)}
+                          title="Delete file from project"
+                          className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-dark-600 rounded-md transition"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -281,7 +316,7 @@ export const MediaLibrary: React.FC = () => {
                     if (videoClipId) {
                       useTimelineStore.getState().updateClipFilter(videoClipId, fx.filter);
                     } else {
-                      alert('Please select a video clip on the timeline first to apply filter!');
+                      alert('Please select a clip on the timeline first to apply filter!');
                     }
                   }}
                 >

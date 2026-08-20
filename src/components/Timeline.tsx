@@ -1,7 +1,8 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Scissors,
   Copy,
+  ClipboardPaste,
   Trash2,
   ZoomIn,
   ZoomOut,
@@ -16,6 +17,9 @@ import {
   Music,
   Type,
   Image as ImageIcon,
+  Magnet,
+  Layers,
+  FileAudio,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track, MediaType } from '../types/timeline';
@@ -25,21 +29,40 @@ export const Timeline: React.FC = () => {
   const [draggingClip, setDraggingClip] = useState<{ id: string; startX: number; originalStart: number } | null>(null);
   const [trimmingClip, setTrimmingClip] = useState<{ id: string; edge: 'left' | 'right'; startX: number; originalStart: number; originalDuration: number } | null>(null);
 
+  // Context Menu State
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
+
   const {
     tracks,
     currentTime,
     maxTimelineDuration,
     zoomLevel,
     selectedClipId,
+    snappingEnabled,
     setCurrentTime,
     setZoomLevel,
     setSelectedClipId,
+    setSnappingEnabled,
     addTrack,
+    deleteTrack,
+    toggleTrackMute,
+    toggleTrackHidden,
+    toggleTrackLocked,
     updateClip,
     splitSelectedClip,
     duplicateSelectedClip,
     deleteSelectedClip,
+    detachAudioFromSelectedClip,
+    copySelectedClip,
+    pasteClipAtPlayhead,
   } = useTimelineStore();
+
+  // Close context menu on outside click
+  useEffect(() => {
+    const handleOutsideClick = () => setContextMenu(null);
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, []);
 
   // Handle Playhead Scrubbing
   const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -50,8 +73,17 @@ export const Timeline: React.FC = () => {
     setCurrentTime(newTime);
   };
 
-  // Handle Dragging Clip to Move
-  const handleClipMouseDown = (e: React.MouseEvent, clip: Clip) => {
+  // Handle Right Click Context Menu on Clips
+  const handleClipContextMenu = (e: React.MouseEvent, clipId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelectedClipId(clipId);
+    setContextMenu({ x: e.clientX, y: e.clientY, clipId });
+  };
+
+  // Mouse Move Window Listener for Drag & Trim
+  const handleClipMouseDown = (e: React.MouseEvent, clip: Clip, track: Track) => {
+    if (track.locked) return;
     e.stopPropagation();
     setSelectedClipId(clip.id);
     setDraggingClip({
@@ -61,8 +93,8 @@ export const Timeline: React.FC = () => {
     });
   };
 
-  // Handle Trimming Clip Handles
-  const handleTrimMouseDown = (e: React.MouseEvent, clip: Clip, edge: 'left' | 'right') => {
+  const handleTrimMouseDown = (e: React.MouseEvent, clip: Clip, track: Track, edge: 'left' | 'right') => {
+    if (track.locked) return;
     e.stopPropagation();
     setSelectedClipId(clip.id);
     setTrimmingClip({
@@ -74,12 +106,17 @@ export const Timeline: React.FC = () => {
     });
   };
 
-  // Mouse Move Window Listener for Drag & Trim
   const handleMouseMove = (e: React.MouseEvent) => {
     if (draggingClip) {
       const deltaX = e.clientX - draggingClip.startX;
-      const deltaTime = deltaX / zoomLevel;
-      const newStart = Math.max(0, draggingClip.originalStart + deltaTime);
+      let deltaTime = deltaX / zoomLevel;
+      let newStart = Math.max(0, draggingClip.originalStart + deltaTime);
+
+      // Snapping logic to playhead
+      if (snappingEnabled && Math.abs(newStart - currentTime) < 0.2) {
+        newStart = currentTime;
+      }
+
       updateClip(draggingClip.id, { startTime: newStart });
     } else if (trimmingClip) {
       const deltaX = e.clientX - trimmingClip.startX;
@@ -114,7 +151,6 @@ export const Timeline: React.FC = () => {
     }
   };
 
-  // Generate Time Ruler Markers
   const totalRulerWidth = maxTimelineDuration * zoomLevel;
   const timeStep = zoomLevel > 60 ? 1 : zoomLevel > 30 ? 5 : 10;
   const rulerTicks = [];
@@ -124,7 +160,7 @@ export const Timeline: React.FC = () => {
 
   return (
     <div
-      className="h-64 bg-dark-800 border-t border-dark-700 flex flex-col select-none z-30 overflow-hidden"
+      className="h-64 bg-dark-800 border-t border-dark-700 flex flex-col select-none z-30 overflow-hidden relative"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
@@ -143,7 +179,7 @@ export const Timeline: React.FC = () => {
 
           <button
             onClick={duplicateSelectedClip}
-            title="Duplicate Selected Clip"
+            title="Duplicate Selected Clip (Ctrl+D)"
             className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
           >
             <Copy className="w-3.5 h-3.5" />
@@ -151,12 +187,37 @@ export const Timeline: React.FC = () => {
           </button>
 
           <button
+            onClick={detachAudioFromSelectedClip}
+            title="Detach Audio from Video"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
+          >
+            <FileAudio className="w-3.5 h-3.5" />
+            <span>Detach Audio</span>
+          </button>
+
+          <button
             onClick={deleteSelectedClip}
-            title="Delete Selected Clip"
+            title="Delete Selected Clip (Delete)"
             className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-red-400 rounded-md text-xs font-semibold transition"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Delete</span>
+          </button>
+
+          <div className="h-4 w-[1px] bg-dark-700 mx-2" />
+
+          {/* Magnet Snapping Toggle */}
+          <button
+            onClick={() => setSnappingEnabled(!snappingEnabled)}
+            title="Toggle Magnet Snapping"
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+              snappingEnabled
+                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                : 'bg-dark-700/60 text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Magnet className="w-3.5 h-3.5" />
+            <span>Snap</span>
           </button>
 
           <div className="h-4 w-[1px] bg-dark-700 mx-2" />
@@ -194,22 +255,62 @@ export const Timeline: React.FC = () => {
       {/* Main Track & Timeline Area */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Track Headers (Left Column) */}
-        <div className="w-48 bg-dark-800 border-r border-dark-700 flex flex-col z-20 shadow-lg">
-          {/* Header Spacer for Ruler */}
-          <div className="h-7 border-b border-dark-700 bg-dark-900/40 px-3 flex items-center">
+        <div className="w-56 bg-dark-800 border-r border-dark-700 flex flex-col z-20 shadow-lg">
+          <div className="h-7 border-b border-dark-700 bg-dark-900/40 px-3 flex items-center justify-between">
             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tracks</span>
+            <span className="text-[10px] text-gray-500">{tracks.length}</span>
           </div>
 
-          {/* Track Header Rows */}
           <div className="flex-1 overflow-y-auto">
             {tracks.map((track) => (
               <div
                 key={track.id}
-                className="h-14 border-b border-dark-700/60 px-3 flex items-center justify-between bg-dark-800/80 hover:bg-dark-700/30 transition"
+                className="h-14 border-b border-dark-700/60 px-3 flex items-center justify-between bg-dark-800/80 hover:bg-dark-700/30 transition group"
               >
-                <div className="flex items-center space-x-2 truncate">
+                <div className="flex items-center space-x-2 truncate max-w-[110px]">
                   {getTrackIcon(track.type)}
                   <span className="text-xs font-semibold text-gray-300 truncate">{track.name}</span>
+                </div>
+
+                {/* Track Controls: Hide, Mute, Lock, Delete */}
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={() => toggleTrackHidden(track.id)}
+                    title={track.hidden ? 'Show Track' : 'Hide Track'}
+                    className={`p-1 rounded hover:bg-dark-600 transition ${
+                      track.hidden ? 'text-amber-400' : 'text-gray-500 hover:text-gray-200'
+                    }`}
+                  >
+                    {track.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    onClick={() => toggleTrackMute(track.id)}
+                    title={track.muted ? 'Unmute Track' : 'Mute Track'}
+                    className={`p-1 rounded hover:bg-dark-600 transition ${
+                      track.muted ? 'text-red-400' : 'text-gray-500 hover:text-gray-200'
+                    }`}
+                  >
+                    {track.muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    onClick={() => toggleTrackLocked(track.id)}
+                    title={track.locked ? 'Unlock Track' : 'Lock Track'}
+                    className={`p-1 rounded hover:bg-dark-600 transition ${
+                      track.locked ? 'text-cyan-400' : 'text-gray-500 hover:text-gray-200'
+                    }`}
+                  >
+                    {track.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                  </button>
+
+                  <button
+                    onClick={() => deleteTrack(track.id)}
+                    title="Delete Track"
+                    className="p-1 text-gray-500 hover:text-red-400 hover:bg-dark-600 rounded transition opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             ))}
@@ -245,7 +346,12 @@ export const Timeline: React.FC = () => {
           {/* Tracks Clip Container */}
           <div style={{ width: `${totalRulerWidth}px` }} className="relative">
             {tracks.map((track) => (
-              <div key={track.id} className="h-14 border-b border-dark-700/60 relative bg-dark-900/20">
+              <div
+                key={track.id}
+                className={`h-14 border-b border-dark-700/60 relative ${
+                  track.locked ? 'bg-dark-900/40 opacity-70' : 'bg-dark-900/20'
+                }`}
+              >
                 {track.clips.map((clip) => {
                   const clipLeft = clip.startTime * zoomLevel;
                   const clipWidth = clip.duration * zoomLevel;
@@ -254,7 +360,8 @@ export const Timeline: React.FC = () => {
                   return (
                     <div
                       key={clip.id}
-                      onMouseDown={(e) => handleClipMouseDown(e, clip)}
+                      onMouseDown={(e) => handleClipMouseDown(e, clip, track)}
+                      onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
                       style={{
                         left: `${clipLeft}px`,
                         width: `${clipWidth}px`,
@@ -271,7 +378,7 @@ export const Timeline: React.FC = () => {
                     >
                       {/* Left Trim Handle */}
                       <div
-                        onMouseDown={(e) => handleTrimMouseDown(e, clip, 'left')}
+                        onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
                         className="absolute left-0 top-0 bottom-0 w-2.5 bg-white/20 hover:bg-cyan-400 cursor-ew-resize rounded-l"
                       />
 
@@ -288,7 +395,7 @@ export const Timeline: React.FC = () => {
 
                       {/* Right Trim Handle */}
                       <div
-                        onMouseDown={(e) => handleTrimMouseDown(e, clip, 'right')}
+                        onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'right')}
                         className="absolute right-0 top-0 bottom-0 w-2.5 bg-white/20 hover:bg-cyan-400 cursor-ew-resize rounded-r"
                       />
                     </div>
@@ -299,6 +406,44 @@ export const Timeline: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Floating Right Click Context Menu */}
+      {contextMenu && (
+        <div
+          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+          className="fixed bg-dark-800 border border-dark-600 rounded-xl shadow-2xl py-1 z-50 min-w-[160px] text-xs font-semibold text-gray-200 animate-in fade-in zoom-in-95 duration-100"
+        >
+          <button
+            onClick={splitSelectedClip}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2 text-cyan-300"
+          >
+            <Scissors className="w-3.5 h-3.5" />
+            <span>Split at Playhead</span>
+          </button>
+          <button
+            onClick={duplicateSelectedClip}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>Duplicate Clip</span>
+          </button>
+          <button
+            onClick={detachAudioFromSelectedClip}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
+          >
+            <FileAudio className="w-3.5 h-3.5" />
+            <span>Detach Audio</span>
+          </button>
+          <div className="h-[1px] bg-dark-700 my-1" />
+          <button
+            onClick={deleteSelectedClip}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2 text-red-400"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete Clip</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 };
