@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ak Cut</string>
+    <string name="title_activity_main">Ak Cut</string>
+    <string name="package_name">com.akcut.app</string>
+    <string name="custom_url_scheme">com.akcut.app</string>
+</resources>
