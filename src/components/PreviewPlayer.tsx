@@ -9,10 +9,12 @@ import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Keyframe } from '../types/timeline';
 
 export const PreviewPlayer: React.FC = () => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const activeVideoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
 
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 640, height: 360 });
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number; initialX: number; initialY: number } | null>(null);
 
@@ -39,6 +41,23 @@ export const PreviewPlayer: React.FC = () => {
       }
     }
   }
+
+  // Monitor container size with ResizeObserver
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setContainerSize({ width, height });
+        }
+      }
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   // Playback Loop
   useEffect(() => {
@@ -343,58 +362,62 @@ export const PreviewPlayer: React.FC = () => {
   const displayDuration = getProjectDuration();
 
   return (
-    <main className="flex-1 flex flex-col bg-dark-900 overflow-hidden relative select-none">
-      {/* Canvas Viewport */}
-      <div className="flex-1 flex items-center justify-center p-4 relative overflow-hidden bg-black/40">
-        <div className="relative shadow-2xl rounded-lg overflow-hidden border border-dark-700/60 max-h-full flex items-center justify-center">
+    <main className="flex-1 flex flex-col bg-dark-900 overflow-hidden relative select-none min-h-0 min-w-0">
+      {/* Canvas Viewport Container */}
+      <div ref={containerRef} className="flex-1 flex items-center justify-center p-2 relative overflow-hidden bg-black/40 min-h-0 min-w-0">
+        <div className="relative shadow-2xl rounded-lg overflow-hidden border border-dark-700/60 max-w-full max-h-full flex items-center justify-center">
           <canvas
             ref={canvasRef}
             onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleCanvasMouseMove}
             onMouseUp={handleCanvasMouseUp}
-            className={`max-h-[55vh] max-w-full object-contain rounded bg-black ${
+            className={`max-h-full max-w-full object-contain rounded bg-black ${
               selectedClip ? 'cursor-move' : 'cursor-default'
             }`}
+            style={{
+              maxHeight: `${Math.max(160, containerSize.height - 10)}px`,
+              maxWidth: `${Math.max(200, containerSize.width - 10)}px`,
+            }}
           />
         </div>
       </div>
 
       {/* Playback Control Bar */}
-      <div className="h-12 bg-dark-800 border-t border-dark-700 px-6 flex items-center justify-between z-10">
+      <div className="h-10 md:h-12 bg-dark-800 border-t border-dark-700 px-3 sm:px-6 flex items-center justify-between z-10 shrink-0">
         {/* Timecode Display */}
-        <div className="font-mono text-xs text-cyan-400 font-bold bg-dark-900/80 px-3 py-1.5 rounded-md border border-dark-700">
+        <div className="font-mono text-[11px] md:text-xs text-cyan-400 font-bold bg-dark-900/80 px-2 py-1 md:px-3 md:py-1.5 rounded-md border border-dark-700">
           {formatTimecode(currentTime)}{' '}
-          <span className="text-gray-500 font-normal">/ {formatTimecode(displayDuration)}</span>
+          <span className="text-gray-500 font-normal hidden sm:inline">/ {formatTimecode(displayDuration)}</span>
         </div>
 
         {/* Playback Controls */}
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-2 md:space-x-3">
           <button
             onClick={() => handleStepFrame(-1)}
             title="Step 1 Frame Backward"
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
+            className="p-1 md:p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
           >
-            <SkipBack className="w-4 h-4" />
+            <SkipBack className="w-3.5 h-3.5 md:w-4 md:h-4" />
           </button>
 
           <button
             onClick={() => setIsPlaying(!isPlaying)}
-            className="w-9 h-9 flex items-center justify-center rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/20 transition transform active:scale-95"
+            className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-md shadow-cyan-500/20 transition active:scale-95"
           >
-            {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 ml-0.5" />}
+            {isPlaying ? <Pause className="w-3.5 h-3.5 md:w-4 md:h-4" /> : <Play className="w-3.5 h-3.5 md:w-4 md:h-4 ml-0.5" />}
           </button>
 
           <button
             onClick={() => handleStepFrame(1)}
             title="Step 1 Frame Forward"
-            className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
+            className="p-1 md:p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
           >
-            <SkipForward className="w-4 h-4" />
+            <SkipForward className="w-3.5 h-3.5 md:w-4 md:h-4" />
           </button>
         </div>
 
         <div className="flex items-center space-x-2">
-          <span className="text-[11px] font-semibold text-gray-400 bg-dark-700/50 px-2 py-1 rounded">
+          <span className="text-[10px] md:text-[11px] font-semibold text-gray-400 bg-dark-700/50 px-1.5 py-0.5 md:px-2 md:py-1 rounded">
             30 FPS
           </span>
         </div>

@@ -52,6 +52,8 @@ const DEFAULT_MASK: MaskProps = {
   feather: 0,
 };
 
+export type LayoutMode = 'auto' | 'mobile' | 'desktop';
+
 interface TimelineState {
   // Playback
   isPlaying: boolean;
@@ -62,6 +64,11 @@ interface TimelineState {
   zoomLevel: number;
   snappingEnabled: boolean;
   rippleDeleteEnabled: boolean;
+
+  // Responsive Layout Panel State
+  layoutMode: LayoutMode;
+  isLeftPanelOpen: boolean;
+  isRightPanelOpen: boolean;
 
   // Media Library Assets
   mediaAssets: MediaAsset[];
@@ -77,6 +84,13 @@ interface TimelineState {
 
   // Helpers
   getProjectDuration: () => number;
+
+  // Layout Actions
+  setLayoutMode: (mode: LayoutMode) => void;
+  toggleLeftPanel: () => void;
+  toggleRightPanel: () => void;
+  setLeftPanelOpen: (open: boolean) => void;
+  setRightPanelOpen: (open: boolean) => void;
 
   // Actions
   setIsPlaying: (playing: boolean) => void;
@@ -142,6 +156,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   snappingEnabled: true,
   rippleDeleteEnabled: false,
 
+  layoutMode: 'auto',
+  isLeftPanelOpen: true,
+  isRightPanelOpen: true,
+
   mediaAssets: [
     {
       id: 'asset-sample-1',
@@ -185,6 +203,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     });
     return maxEnd > 0 ? maxEnd : 10;
   },
+
+  setLayoutMode: (mode) => set({ layoutMode: mode }),
+  toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
+  toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
+  setLeftPanelOpen: (open) => set({ isLeftPanelOpen: open }),
+  setRightPanelOpen: (open) => set({ isRightPanelOpen: open }),
 
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
