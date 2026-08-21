@@ -13,6 +13,7 @@ export const PreviewPlayer: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const activeVideoElementsRef = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const activeImageElementsRef = useRef<Map<string, HTMLImageElement>>(new Map());
 
   const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: 640, height: 360 });
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
@@ -133,7 +134,7 @@ export const PreviewPlayer: React.FC = () => {
     return clip.transform;
   };
 
-  // Render Frame & Keyframe & Masking & Chroma Key Processor
+  // Render Frame Engine (Video, Image, Text, Keyframe, Masking, Chroma Key)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -228,7 +229,40 @@ export const PreviewPlayer: React.FC = () => {
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
 
-      if ((clip.type === 'video' || clip.type === 'audio') && clip.src) {
+      // IMAGE CLIP RENDERING (InShot / KineMaster Photo Editing Engine)
+      if (clip.type === 'image' && clip.src) {
+        let imgEl = activeImageElementsRef.current.get(clip.id);
+        if (!imgEl) {
+          imgEl = new Image();
+          imgEl.src = clip.src;
+          imgEl.crossOrigin = 'anonymous';
+          activeImageElementsRef.current.set(clip.id, imgEl);
+        }
+
+        if (imgEl.complete && imgEl.naturalWidth > 0) {
+          try {
+            ctx.drawImage(imgEl, -width / 2, -height / 2, width, height);
+
+            // Chroma Key (Green Screen Removal on Images)
+            if (clip.chromaKey?.enabled) {
+              const frameData = ctx.getImageData(0, 0, width, height);
+              const data = frameData.data;
+              const threshold = (clip.chromaKey.threshold / 100) * 255;
+
+              for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                if (g > 100 && g > r + threshold / 2 && g > b + threshold / 2) {
+                  data[i + 3] = 0; // Transparent
+                }
+              }
+              ctx.putImageData(frameData, 0, 0);
+            }
+          } catch (e) {}
+        }
+      } else if ((clip.type === 'video' || clip.type === 'audio') && clip.src) {
         let videoEl = activeVideoElementsRef.current.get(clip.id);
         if (!videoEl) {
           videoEl = document.createElement('video');
@@ -259,7 +293,7 @@ export const PreviewPlayer: React.FC = () => {
           try {
             ctx.drawImage(videoEl, -width / 2, -height / 2, width, height);
 
-            // Chroma Key (Green Screen) Pixel Processor
+            // Chroma Key (Green Screen Removal)
             if (clip.chromaKey?.enabled) {
               const frameData = ctx.getImageData(0, 0, width, height);
               const data = frameData.data;
@@ -270,7 +304,6 @@ export const PreviewPlayer: React.FC = () => {
                 const g = data[i + 1];
                 const b = data[i + 2];
 
-                // Check Green Dominance
                 if (g > 100 && g > r + threshold / 2 && g > b + threshold / 2) {
                   data[i + 3] = 0; // Transparent
                 }
