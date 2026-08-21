@@ -10,6 +10,7 @@ import {
   Sparkles,
   Image as ImageIcon,
   ArrowRightLeft,
+  Upload,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { MediaType, TransitionType } from '../types/timeline';
@@ -65,7 +66,7 @@ export const MediaLibrary: React.FC = () => {
         name: file.name,
         type,
         src: url,
-        duration: 8,
+        duration: 10,
         size: sizeFormatted,
       });
 
@@ -76,8 +77,41 @@ export const MediaLibrary: React.FC = () => {
         name: file.name,
         type,
         src: url,
-        duration: 8,
-        sourceDuration: 8,
+        duration: 10,
+        sourceDuration: 10,
+      });
+
+      setSelectedClipId(clipId);
+    });
+
+    e.target.value = '';
+  };
+
+  const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    Array.from(files).forEach((file) => {
+      const url = URL.createObjectURL(file);
+      const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+
+      const assetId = addMediaAsset({
+        name: file.name,
+        type: 'audio',
+        src: url,
+        duration: 15,
+        size: sizeFormatted,
+      });
+
+      let audioTrack = tracks.find((t) => t.type === 'audio');
+      let audioTrackId = audioTrack?.id || addTrack('audio', 'Audio Track');
+
+      const clipId = addClipToTrack(audioTrackId, {
+        name: file.name,
+        type: 'audio',
+        src: url,
+        duration: 15,
+        sourceDuration: 15,
       });
 
       setSelectedClipId(clipId);
@@ -112,6 +146,8 @@ export const MediaLibrary: React.FC = () => {
 
     setSelectedClipId(clipId);
   };
+
+  const audioAssets = mediaAssets.filter((a) => a.type === 'audio');
 
   return (
     <aside className="w-80 bg-dark-800 border-r border-dark-700 flex flex-col h-full select-none z-20">
@@ -177,7 +213,7 @@ export const MediaLibrary: React.FC = () => {
             <label className="flex flex-col items-center justify-center border-2 border-dashed border-dark-600 hover:border-cyan-500/60 rounded-xl p-6 cursor-pointer bg-dark-900/30 hover:bg-dark-900/60 transition group">
               <FolderOpen className="w-8 h-8 text-cyan-400 mb-2 group-hover:scale-110 transition-transform" />
               <span className="text-xs font-semibold text-gray-200">Import Media Files</span>
-              <span className="text-[10px] text-gray-500 mt-1">MP4, MOV, MP3, PNG, JPG</span>
+              <span className="text-[10px] text-gray-500 mt-1">MP4, MOV, MP3, WAV, PNG, JPG</span>
               <input
                 type="file"
                 multiple
@@ -309,9 +345,73 @@ export const MediaLibrary: React.FC = () => {
 
         {/* AUDIO TAB */}
         {activeTab === 'audio' && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Free Music & SFX</h3>
+          <div className="space-y-4">
+            {/* Custom Audio Upload Box */}
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-cyan-500/40 hover:border-cyan-400 rounded-xl p-4 cursor-pointer bg-cyan-900/10 hover:bg-cyan-900/20 transition group">
+              <Upload className="w-6 h-6 text-cyan-400 mb-1 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-bold text-cyan-300">Upload Custom Music / Audio</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">MP3, WAV, AAC, M4A, OGG</span>
+              <input
+                type="file"
+                multiple
+                accept="audio/*,.mp3,.wav,.aac,.m4a,.ogg"
+                onChange={handleAudioUpload}
+                className="hidden"
+              />
+            </label>
+
+            {/* Custom Uploaded Audio Files */}
+            {audioAssets.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Your Custom Audio Tracks</h3>
+                {audioAssets.map((asset) => (
+                  <div
+                    key={asset.id}
+                    className="flex items-center justify-between p-2.5 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-lg transition"
+                  >
+                    <div className="flex items-center space-x-2.5 truncate max-w-[170px]">
+                      <div className="w-7 h-7 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0">
+                        <Music className="w-3.5 h-3.5 text-green-400" />
+                      </div>
+                      <div className="truncate">
+                        <div className="text-xs font-medium text-gray-200 truncate">{asset.name}</div>
+                        <div className="text-[10px] text-gray-500">{asset.size}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => {
+                          let audioTrack = tracks.find((t) => t.type === 'audio');
+                          let audioTrackId = audioTrack?.id || addTrack('audio', 'Audio Track');
+                          addClipToTrack(audioTrackId, {
+                            name: asset.name,
+                            type: 'audio',
+                            src: asset.src,
+                            duration: asset.duration,
+                            sourceDuration: asset.duration,
+                          });
+                        }}
+                        className="p-1.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white rounded-md transition"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        onClick={() => deleteMediaAsset(asset.id)}
+                        className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-dark-600 rounded-md transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Stock Music Presets */}
             <div className="space-y-2">
+              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Free Stock Music</h3>
               {[
                 { title: 'Chill Lo-Fi Beat', genre: 'Lo-Fi', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
                 { title: 'Upbeat Cinematic', genre: 'Cinematic', src: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3' },

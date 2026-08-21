@@ -15,6 +15,7 @@ import {
   Crop,
   Gauge,
   Plus,
+  Headphones,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { SpeedCurveType, MaskType } from '../types/timeline';
@@ -74,6 +75,7 @@ export const Inspector: React.FC = () => {
     splitSelectedClip,
     duplicateSelectedClip,
     deleteSelectedClip,
+    detachAudioFromSelectedClip,
   } = useTimelineStore();
 
   let selectedClip = null;
@@ -119,6 +121,15 @@ export const Inspector: React.FC = () => {
           {selectedClip.name}
         </div>
         <div className="flex items-center space-x-1">
+          {selectedClip.type === 'video' && (
+            <button
+              onClick={detachAudioFromSelectedClip}
+              title="Extract Audio from Video"
+              className="p-1.5 text-gray-400 hover:text-green-400 hover:bg-dark-700 rounded-lg transition"
+            >
+              <Headphones className="w-4 h-4" />
+            </button>
+          )}
           <button
             onClick={splitSelectedClip}
             title="Split Clip (S)"
@@ -474,6 +485,16 @@ export const Inspector: React.FC = () => {
         {/* AUDIO TAB */}
         {activeTab === 'audio' && (
           <div className="space-y-4">
+            {selectedClip.type === 'video' && (
+              <button
+                onClick={detachAudioFromSelectedClip}
+                className="w-full py-2 bg-green-600/20 hover:bg-green-600/30 border border-green-500/40 text-green-300 font-bold text-xs rounded-xl shadow flex items-center justify-center space-x-2 transition transform active:scale-95"
+              >
+                <Headphones className="w-4 h-4 text-green-400" />
+                <span>Extract Audio Track from Video</span>
+              </button>
+            )}
+
             <div>
               <div className="flex justify-between text-gray-400 mb-1 font-medium">
                 <span>Volume</span>
