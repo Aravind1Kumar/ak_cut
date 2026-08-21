@@ -34,6 +34,9 @@ jobs:
       - name: Sync Capacitor Native Project
         run: npx cap sync android
 
+      - name: Fix Windows Line Endings on Gradlew
+        run: sed -i 's/\r$//' android/gradlew
+
       - name: Build Android APK
         run: |
           cd android
