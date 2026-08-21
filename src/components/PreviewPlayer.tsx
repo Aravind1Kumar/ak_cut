@@ -4,11 +4,9 @@ import {
   Pause,
   SkipBack,
   SkipForward,
-  Volume2,
-  VolumeX,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { Clip } from '../types/timeline';
+import { Clip, Keyframe } from '../types/timeline';
 
 export const PreviewPlayer: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -42,7 +40,7 @@ export const PreviewPlayer: React.FC = () => {
     }
   }
 
-  // Playback Loop & Auto-Stop at end of project
+  // Playback Loop
   useEffect(() => {
     let lastTime = performance.now();
 
@@ -78,7 +76,45 @@ export const PreviewPlayer: React.FC = () => {
     };
   }, [isPlaying, currentTime, getProjectDuration]);
 
-  // Render Frame & Play Sound
+  // Interpolate Keyframes at current time
+  const getInterpolatedTransform = (clip: Clip, relTime: number) => {
+    if (!clip.keyframes || clip.keyframes.length === 0) {
+      return clip.transform;
+    }
+
+    const sortedKfs = [...clip.keyframes].sort((a, b) => a.time - b.time);
+
+    if (relTime <= sortedKfs[0].time) {
+      return { ...clip.transform, ...sortedKfs[0].transform };
+    }
+
+    if (relTime >= sortedKfs[sortedKfs.length - 1].time) {
+      return { ...clip.transform, ...sortedKfs[sortedKfs.length - 1].transform };
+    }
+
+    for (let i = 0; i < sortedKfs.length - 1; i++) {
+      const kf1 = sortedKfs[i];
+      const kf2 = sortedKfs[i + 1];
+
+      if (relTime >= kf1.time && relTime <= kf2.time) {
+        const factor = (relTime - kf1.time) / (kf2.time - kf1.time);
+        const t1 = { ...clip.transform, ...kf1.transform };
+        const t2 = { ...clip.transform, ...kf2.transform };
+
+        return {
+          x: t1.x + (t2.x - t1.x) * factor,
+          y: t1.y + (t2.y - t1.y) * factor,
+          scale: t1.scale + (t2.scale - t1.scale) * factor,
+          rotation: t1.rotation + (t2.rotation - t1.rotation) * factor,
+          opacity: t1.opacity + (t2.opacity - t1.opacity) * factor,
+        };
+      }
+    }
+
+    return clip.transform;
+  };
+
+  // Render Frame & Keyframe & Masking & Chroma Key Processor
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -124,7 +160,6 @@ export const PreviewPlayer: React.FC = () => {
       return trackBIdx - trackAIdx;
     });
 
-    // Pause audio/video elements of clips no longer active
     activeVideoElementsRef.current.forEach((videoEl, clipId) => {
       const isActive = visibleClips.some((c) => c.id === clipId);
       if (!isActive || !isPlaying) {
@@ -136,15 +171,40 @@ export const PreviewPlayer: React.FC = () => {
       const parentTrack = tracks.find((t) => t.id === clip.trackId);
       const isMuted = parentTrack?.muted || clip.audio.muted;
 
+      const relTime = currentTime - clip.startTime;
+      const currentTransform = getInterpolatedTransform(clip, relTime);
+
       ctx.save();
 
-      // Transform
-      const centerX = width / 2 + (clip.transform.x / 100) * width;
-      const centerY = height / 2 + (clip.transform.y / 100) * height;
+      // Masking Path
+      if (clip.mask && clip.mask.type !== 'none') {
+        ctx.beginPath();
+        if (clip.mask.type === 'circle') {
+          ctx.arc(width / 2, height / 2, Math.min(width, height) / 3, 0, Math.PI * 2);
+        } else if (clip.mask.type === 'rectangle') {
+          ctx.rect(width * 0.15, height * 0.15, width * 0.7, height * 0.7);
+        } else if (clip.mask.type === 'splitLeft') {
+          ctx.rect(0, 0, width / 2, height);
+        }
+        ctx.clip();
+      }
+
+      // Center transform
+      const centerX = width / 2 + (currentTransform.x / 100) * width;
+      const centerY = height / 2 + (currentTransform.y / 100) * height;
       ctx.translate(centerX, centerY);
-      ctx.rotate((clip.transform.rotation * Math.PI) / 180);
-      ctx.scale(clip.transform.scale, clip.transform.scale);
-      ctx.globalAlpha = clip.transform.opacity;
+      ctx.rotate((currentTransform.rotation * Math.PI) / 180);
+      ctx.scale(currentTransform.scale, currentTransform.scale);
+
+      // Transitions Opacity blending
+      let opacity = currentTransform.opacity;
+      if (clip.transition && clip.transition.type !== 'none') {
+        const transDur = clip.transition.duration || 0.5;
+        if (relTime < transDur) {
+          opacity *= relTime / transDur;
+        }
+      }
+      ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
 
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
@@ -158,11 +218,10 @@ export const PreviewPlayer: React.FC = () => {
           activeVideoElementsRef.current.set(clip.id, videoEl);
         }
 
-        // Configure Sound Volume & Mute State
         videoEl.muted = isMuted;
         videoEl.volume = Math.max(0, Math.min(1, clip.audio.volume));
 
-        const mediaTime = (currentTime - clip.startTime) * clip.speed + clip.mediaOffset;
+        const mediaTime = relTime * clip.speed + clip.mediaOffset;
         if (Math.abs(videoEl.currentTime - mediaTime) > 0.15) {
           videoEl.currentTime = mediaTime;
         }
@@ -180,6 +239,25 @@ export const PreviewPlayer: React.FC = () => {
         if (clip.type === 'video') {
           try {
             ctx.drawImage(videoEl, -width / 2, -height / 2, width, height);
+
+            // Chroma Key (Green Screen) Pixel Processor
+            if (clip.chromaKey?.enabled) {
+              const frameData = ctx.getImageData(0, 0, width, height);
+              const data = frameData.data;
+              const threshold = (clip.chromaKey.threshold / 100) * 255;
+
+              for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                // Check Green Dominance
+                if (g > 100 && g > r + threshold / 2 && g > b + threshold / 2) {
+                  data[i + 3] = 0; // Transparent
+                }
+              }
+              ctx.putImageData(frameData, 0, 0);
+            }
           } catch (e) {}
         }
       } else if (clip.type === 'text' && clip.text) {

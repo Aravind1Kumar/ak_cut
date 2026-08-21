@@ -38,16 +38,32 @@ export interface TextProps {
   animation?: 'none' | 'fadeIn' | 'typewriter' | 'bounce';
 }
 
-export type TransitionType = 'none' | 'fade' | 'dissolve' | 'wipe' | 'zoom';
+export type TransitionType = 'none' | 'fade' | 'dissolve' | 'wipe' | 'zoom' | 'flash';
 
 export interface TransitionProps {
   type: TransitionType;
   duration: number; // seconds
 }
 
+export interface ChromaKeyProps {
+  enabled: boolean;
+  color: string; // Hex e.g. #00ff00
+  threshold: number; // 0 - 100
+  smoothness: number; // 0 - 100
+}
+
+export type MaskType = 'none' | 'circle' | 'rectangle' | 'splitLeft' | 'splitRight';
+
+export interface MaskProps {
+  type: MaskType;
+  feather: number; // px
+}
+
+export type SpeedCurveType = 'flat' | 'hero' | 'montage' | 'bulletTime' | 'flashOut';
+
 export interface Keyframe {
   id: string;
-  time: number; // relative to clip start
+  time: number; // relative to clip start (seconds)
   transform: Partial<TransformProps>;
   filter?: Partial<FilterProps>;
 }
@@ -63,8 +79,9 @@ export interface Clip {
   sourceDuration: number; // Total length of source media
   src: string;          // ObjectURL or blob URL
 
-  // Speed multiplier
+  // Speed multiplier & curve
   speed: number;
+  speedCurve: SpeedCurveType;
 
   // Clip properties
   transform: TransformProps;
@@ -72,6 +89,8 @@ export interface Clip {
   audio: AudioProps;
   text?: TextProps;
   transition?: TransitionProps;
+  chromaKey?: ChromaKeyProps;
+  mask?: MaskProps;
   keyframes: Keyframe[];
 
   thumbnailUrl?: string;

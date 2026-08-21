@@ -10,6 +10,10 @@ import {
   TextProps,
   MediaAsset,
   TransitionProps,
+  ChromaKeyProps,
+  MaskProps,
+  SpeedCurveType,
+  Keyframe,
 } from '../types/timeline';
 
 const DEFAULT_TRANSFORM: TransformProps = {
@@ -34,6 +38,18 @@ const DEFAULT_AUDIO: AudioProps = {
   fadeIn: 0,
   fadeOut: 0,
   muted: false,
+};
+
+const DEFAULT_CHROMA_KEY: ChromaKeyProps = {
+  enabled: false,
+  color: '#00ff00',
+  threshold: 40,
+  smoothness: 10,
+};
+
+const DEFAULT_MASK: MaskProps = {
+  type: 'none',
+  feather: 0,
 };
 
 interface TimelineState {
@@ -90,6 +106,13 @@ interface TimelineState {
   updateClipAudio: (clipId: string, audio: Partial<AudioProps>) => void;
   updateClipText: (clipId: string, text: Partial<TextProps>) => void;
   updateClipTransition: (clipId: string, transition: Partial<TransitionProps>) => void;
+  updateClipChromaKey: (clipId: string, chromaKey: Partial<ChromaKeyProps>) => void;
+  updateClipMask: (clipId: string, mask: Partial<MaskProps>) => void;
+  updateClipSpeedCurve: (clipId: string, curve: SpeedCurveType) => void;
+
+  // Keyframes Actions
+  addKeyframeToClip: (clipId: string) => void;
+  removeKeyframeFromClip: (clipId: string, keyframeId: string) => void;
 
   splitSelectedClip: () => void;
   deleteSelectedClip: () => void;
@@ -151,7 +174,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   history: [],
   historyIndex: -1,
 
-  // Calculate actual project end duration dynamically
   getProjectDuration: () => {
     const { tracks } = get();
     let maxEnd = 0;
@@ -279,9 +301,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       sourceDuration: clipData.sourceDuration || 5,
       src: clipData.src || '',
       speed: clipData.speed || 1.0,
+      speedCurve: clipData.speedCurve || 'flat',
       transform: { ...DEFAULT_TRANSFORM, ...clipData.transform },
       filter: { ...DEFAULT_FILTER, ...clipData.filter },
       audio: { ...DEFAULT_AUDIO, ...clipData.audio },
+      chromaKey: { ...DEFAULT_CHROMA_KEY, ...clipData.chromaKey },
+      mask: { ...DEFAULT_MASK, ...clipData.mask },
       text: clipData.text || (clipData.type === 'text' ? {
         content: clipData.name || 'Your Preferred Text',
         fontFamily: 'sans-serif',
@@ -390,6 +415,80 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         ),
       })),
     }));
+  },
+
+  updateClipChromaKey: (clipId, chromaUpdates) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId
+            ? { ...clip, chromaKey: { ...(clip.chromaKey || DEFAULT_CHROMA_KEY), ...chromaUpdates } }
+            : clip
+        ),
+      })),
+    }));
+  },
+
+  updateClipMask: (clipId, maskUpdates) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId
+            ? { ...clip, mask: { ...(clip.mask || DEFAULT_MASK), ...maskUpdates } }
+            : clip
+        ),
+      })),
+    }));
+  },
+
+  updateClipSpeedCurve: (clipId, curve) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId ? { ...clip, speedCurve: curve } : clip
+        ),
+      })),
+    }));
+  },
+
+  addKeyframeToClip: (clipId) => {
+    const { currentTime, tracks } = get();
+    for (const track of tracks) {
+      const clip = track.clips.find((c) => c.id === clipId);
+      if (clip) {
+        get().pushHistory();
+        const relTime = currentTime - clip.startTime;
+        const newKf: Keyframe = {
+          id: `kf-${Date.now()}`,
+          time: Math.max(0, Math.min(clip.duration, relTime)),
+          transform: { ...clip.transform },
+          filter: { ...clip.filter },
+        };
+
+        const updatedKfs = [...clip.keyframes.filter((k) => Math.abs(k.time - relTime) > 0.1), newKf].sort(
+          (a, b) => a.time - b.time
+        );
+
+        get().updateClip(clipId, { keyframes: updatedKfs });
+        break;
+      }
+    }
+  },
+
+  removeKeyframeFromClip: (clipId, keyframeId) => {
+    const { tracks } = get();
+    for (const track of tracks) {
+      const clip = track.clips.find((c) => c.id === clipId);
+      if (clip) {
+        get().pushHistory();
+        const updatedKfs = clip.keyframes.filter((k) => k.id !== keyframeId);
+        get().updateClip(clipId, { keyframes: updatedKfs });
+        break;
+      }
+    }
   },
 
   splitSelectedClip: () => {
@@ -571,6 +670,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
               sourceDuration: 4.5,
               src: '',
               speed: 1,
+              speedCurve: 'flat',
               transform: DEFAULT_TRANSFORM,
               filter: DEFAULT_FILTER,
               audio: DEFAULT_AUDIO,
@@ -609,6 +709,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
               sourceDuration: 12,
               src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
               speed: 1,
+              speedCurve: 'flat',
               transform: DEFAULT_TRANSFORM,
               filter: DEFAULT_FILTER,
               audio: DEFAULT_AUDIO,

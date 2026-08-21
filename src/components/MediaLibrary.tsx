@@ -9,9 +9,17 @@ import {
   Trash2,
   Sparkles,
   Image as ImageIcon,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { MediaType } from '../types/timeline';
+import { MediaType, TransitionType } from '../types/timeline';
+
+const PRESET_TRANSITIONS = [
+  { name: '🌅 Cross Dissolve / Fade', type: 'fade', duration: 0.8 },
+  { name: '🔍 Zoom Blur In', type: 'zoom', duration: 0.6 },
+  { name: '↔️ Wipe Left to Right', type: 'wipe', duration: 0.7 },
+  { name: '💥 Flash White', type: 'flash', duration: 0.4 },
+];
 
 const PRESET_EFFECTS = [
   { name: '🎬 Teal & Orange', category: 'Cinematic', filter: { hueRotate: 30, contrast: 125, saturation: 140, brightness: 100, sepia: 0, blur: 0 } },
@@ -23,15 +31,10 @@ const PRESET_EFFECTS = [
   { name: '⚡ High Contrast', category: 'Action', filter: { contrast: 160, brightness: 105, saturation: 130, sepia: 0, hueRotate: 0, blur: 0 } },
   { name: '👾 VHS Retro', category: 'Glitch', filter: { hueRotate: 240, saturation: 200, contrast: 110, brightness: 100, sepia: 0, blur: 0 } },
   { name: '🔮 Dream Blur Glow', category: 'Soft', filter: { blur: 6, brightness: 115, saturation: 110, contrast: 100, sepia: 0, hueRotate: 0 } },
-  { name: '🌌 Vaporwave', category: 'Aesthetic', filter: { hueRotate: 280, saturation: 170, brightness: 105, contrast: 100, sepia: 0, blur: 0 } },
-  { name: '📼 Noir Cinema', category: 'Dark', filter: { saturation: 0, contrast: 160, brightness: 85, sepia: 0, hueRotate: 0, blur: 0 } },
-  { name: '🌈 Psychedelic', category: 'Trippy', filter: { hueRotate: 120, saturation: 220, brightness: 110, contrast: 100, sepia: 0, blur: 0 } },
-  { name: '⚡ Faded Pastel', category: 'Pastel', filter: { contrast: 85, brightness: 115, saturation: 80, sepia: 0, hueRotate: 0, blur: 0 } },
-  { name: '💎 Deep HDR', category: 'HDR', filter: { contrast: 150, saturation: 130, brightness: 90, sepia: 0, hueRotate: 0, blur: 0 } },
 ];
 
 export const MediaLibrary: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'effects' | 'ai'>('effects');
+  const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'transitions' | 'effects' | 'ai'>('media');
   const [customText, setCustomText] = useState('My Custom Preferred Text');
 
   const {
@@ -42,6 +45,7 @@ export const MediaLibrary: React.FC = () => {
     addClipToTrack,
     addTrack,
     setSelectedClipId,
+    updateClipTransition,
   } = useTimelineStore();
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,157 +113,59 @@ export const MediaLibrary: React.FC = () => {
     setSelectedClipId(clipId);
   };
 
-  const handleAddTextTemplate = (templateName: string, style: any) => {
-    let textTrack = tracks.find((t) => t.type === 'text');
-    let textTrackId = textTrack?.id || addTrack('text', 'Text Track');
-
-    const clipId = addClipToTrack(textTrackId, {
-      name: templateName,
-      type: 'text',
-      duration: 4,
-      text: {
-        content: templateName,
-        fontFamily: style.fontFamily || 'Inter, sans-serif',
-        fontSize: style.fontSize || 44,
-        color: style.color || '#ffffff',
-        backgroundColor: style.backgroundColor || 'transparent',
-        borderColor: style.borderColor || '#000000',
-        borderWidth: style.borderWidth || 0,
-        alignment: 'center',
-        bold: true,
-        italic: false,
-      },
-    });
-
-    setSelectedClipId(clipId);
-  };
-
-  const handleAddStockAudio = (title: string, src: string) => {
-    let audioTrack = tracks.find((t) => t.type === 'audio');
-    let audioTrackId = audioTrack?.id || addTrack('audio', 'Audio Track');
-
-    const clipId = addClipToTrack(audioTrackId, {
-      name: title,
-      type: 'audio',
-      src,
-      duration: 15,
-      sourceDuration: 15,
-    });
-
-    setSelectedClipId(clipId);
-  };
-
   return (
     <aside className="w-80 bg-dark-800 border-r border-dark-700 flex flex-col h-full select-none z-20">
-      {/* Left Navigation Bar */}
-      <div className="flex border-b border-dark-700 bg-dark-900/40 p-1">
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-dark-700 bg-dark-900/40 p-1 overflow-x-auto">
         {[
-          { id: 'media', label: 'Media', icon: <Film className="w-4 h-4" /> },
-          { id: 'text', label: 'Text', icon: <Type className="w-4 h-4" /> },
-          { id: 'audio', label: 'Audio', icon: <Music className="w-4 h-4" /> },
-          { id: 'effects', label: 'Effects', icon: <Wand2 className="w-4 h-4" /> },
-          { id: 'ai', label: 'AI Tools', icon: <Sparkles className="w-4 h-4" /> },
+          { id: 'media', label: 'Media', icon: <Film className="w-3.5 h-3.5" /> },
+          { id: 'text', label: 'Text', icon: <Type className="w-3.5 h-3.5" /> },
+          { id: 'transitions', label: 'Transitions', icon: <ArrowRightLeft className="w-3.5 h-3.5" /> },
+          { id: 'effects', label: 'Effects', icon: <Wand2 className="w-3.5 h-3.5" /> },
+          { id: 'audio', label: 'Audio', icon: <Music className="w-3.5 h-3.5" /> },
+          { id: 'ai', label: 'AI', icon: <Sparkles className="w-3.5 h-3.5" /> },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 flex flex-col items-center justify-center py-2 px-1 text-[11px] font-medium rounded-md transition ${
+            className={`flex-1 flex flex-col items-center justify-center py-2 px-1 text-[10px] font-medium rounded-md transition ${
               activeTab === tab.id
                 ? 'bg-dark-700 text-cyan-400 font-semibold shadow-sm'
                 : 'text-gray-400 hover:text-gray-200 hover:bg-dark-700/50'
             }`}
           >
             {tab.icon}
-            <span className="mt-1">{tab.label}</span>
+            <span className="mt-0.5">{tab.label}</span>
           </button>
         ))}
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* EFFECTS TAB */}
-        {activeTab === 'effects' && (
+        {/* TRANSITIONS TAB */}
+        {activeTab === 'transitions' && (
           <div className="space-y-3">
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-              14+ CapCut Trending Effects
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              {PRESET_EFFECTS.map((fx, idx) => (
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Video Transitions</h3>
+            <div className="grid grid-cols-1 gap-2">
+              {PRESET_TRANSITIONS.map((tr, idx) => (
                 <div
                   key={idx}
-                  className="p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl text-left cursor-pointer transition group"
                   onClick={() => {
-                    const videoClipId = useTimelineStore.getState().selectedClipId;
-                    if (videoClipId) {
-                      useTimelineStore.getState().updateClipFilter(videoClipId, fx.filter);
+                    const selId = useTimelineStore.getState().selectedClipId;
+                    if (selId) {
+                      updateClipTransition(selId, { type: tr.type as TransitionType, duration: tr.duration });
                     } else {
-                      alert('Please select a clip on the timeline first to apply effect!');
+                      alert('Please select a clip on the timeline first to apply transition!');
                     }
                   }}
-                >
-                  <Wand2 className="w-4 h-4 text-cyan-400 mb-1 group-hover:scale-110 transition-transform" />
-                  <div className="text-xs font-semibold text-gray-200 truncate">{fx.name}</div>
-                  <div className="text-[9px] text-cyan-400 font-medium mt-0.5">{fx.category}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TEXT TAB */}
-        {activeTab === 'text' && (
-          <div className="space-y-4">
-            <div className="p-3 bg-dark-900/80 border border-cyan-500/40 rounded-xl space-y-2">
-              <label className="block text-xs font-bold text-cyan-300 uppercase tracking-wider">
-                Add Preferred Custom Text
-              </label>
-              <textarea
-                rows={2}
-                value={customText}
-                onChange={(e) => setCustomText(e.target.value)}
-                placeholder="Type your preferred text here..."
-                className="w-full bg-dark-800 border border-dark-600 focus:border-cyan-500 rounded-lg p-2 text-xs text-gray-100 outline-none resize-none"
-              />
-              <button
-                onClick={handleAddCustomText}
-                className="w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-lg shadow flex items-center justify-center space-x-1.5 transition transform active:scale-95"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Custom Text to Timeline</span>
-              </button>
-            </div>
-
-            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Text Presets & Templates</h3>
-            <div className="grid grid-cols-1 gap-2">
-              {[
-                {
-                  name: '🔥 Trending Heading',
-                  style: { color: '#00f2fe', fontSize: 48, fontFamily: 'Bebas Neue, sans-serif', borderWidth: 2 },
-                },
-                {
-                  name: '✨ Subtitle Overlay',
-                  style: { color: '#ffffff', backgroundColor: 'rgba(0,0,0,0.7)', fontSize: 32, fontFamily: 'Inter, sans-serif' },
-                },
-                {
-                  name: '⚡ Cyberpunk Neon',
-                  style: { color: '#ff007f', borderColor: '#00f2fe', borderWidth: 2, fontSize: 52, fontFamily: 'Anton, sans-serif' },
-                },
-                {
-                  name: ' Minimal Title',
-                  style: { color: '#e2e8f0', fontSize: 36, fontFamily: 'Playfair Display, serif' },
-                },
-              ].map((template, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleAddTextTemplate(template.name.replace(/[^a-zA-Z0-9 ]/g, ''), template.style)}
-                  className="flex items-center justify-between p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl transition text-left group"
+                  className="flex items-center justify-between p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl cursor-pointer transition group"
                 >
                   <div>
-                    <div className="text-xs font-semibold text-gray-200">{template.name}</div>
-                    <div className="text-[10px] text-gray-500">Click to add to timeline</div>
+                    <div className="text-xs font-semibold text-gray-200">{tr.name}</div>
+                    <div className="text-[10px] text-gray-500">Duration: {tr.duration}s</div>
                   </div>
                   <Plus className="w-4 h-4 text-cyan-400 group-hover:scale-125 transition-transform" />
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -349,6 +255,58 @@ export const MediaLibrary: React.FC = () => {
           </div>
         )}
 
+        {/* TEXT TAB */}
+        {activeTab === 'text' && (
+          <div className="space-y-4">
+            <div className="p-3 bg-dark-900/80 border border-cyan-500/40 rounded-xl space-y-2">
+              <label className="block text-xs font-bold text-cyan-300 uppercase tracking-wider">
+                Add Preferred Custom Text
+              </label>
+              <textarea
+                rows={2}
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder="Type your preferred text here..."
+                className="w-full bg-dark-800 border border-dark-600 focus:border-cyan-500 rounded-lg p-2 text-xs text-gray-100 outline-none resize-none"
+              />
+              <button
+                onClick={handleAddCustomText}
+                className="w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-lg shadow flex items-center justify-center space-x-1.5 transition transform active:scale-95"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Custom Text to Timeline</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* EFFECTS TAB */}
+        {activeTab === 'effects' && (
+          <div className="space-y-3">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">CapCut Effects</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {PRESET_EFFECTS.map((fx, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl text-left cursor-pointer transition group"
+                  onClick={() => {
+                    const videoClipId = useTimelineStore.getState().selectedClipId;
+                    if (videoClipId) {
+                      useTimelineStore.getState().updateClipFilter(videoClipId, fx.filter);
+                    } else {
+                      alert('Please select a clip on the timeline first to apply effect!');
+                    }
+                  }}
+                >
+                  <Wand2 className="w-4 h-4 text-cyan-400 mb-1 group-hover:scale-110 transition-transform" />
+                  <div className="text-xs font-semibold text-gray-200 truncate">{fx.name}</div>
+                  <div className="text-[9px] text-cyan-400 font-medium mt-0.5">{fx.category}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* AUDIO TAB */}
         {activeTab === 'audio' && (
           <div className="space-y-3">
@@ -373,7 +331,17 @@ export const MediaLibrary: React.FC = () => {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleAddStockAudio(track.title, track.src)}
+                    onClick={() => {
+                      let audioTrack = tracks.find((t) => t.type === 'audio');
+                      let audioTrackId = audioTrack?.id || addTrack('audio', 'Audio Track');
+                      addClipToTrack(audioTrackId, {
+                        name: track.title,
+                        type: 'audio',
+                        src: track.src,
+                        duration: 15,
+                        sourceDuration: 15,
+                      });
+                    }}
                     className="p-1.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white rounded-md transition"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -397,10 +365,24 @@ export const MediaLibrary: React.FC = () => {
               </p>
               <button
                 onClick={() => {
-                  handleAddTextTemplate('AI Subtitle: Hello and welcome to Ak Cut!', {
-                    color: '#ffffff',
-                    backgroundColor: 'rgba(0,0,0,0.8)',
-                    fontSize: 34,
+                  let textTrack = tracks.find((t) => t.type === 'text');
+                  let textTrackId = textTrack?.id || addTrack('text', 'Text Track');
+                  addClipToTrack(textTrackId, {
+                    name: 'AI Auto Caption',
+                    type: 'text',
+                    duration: 4,
+                    text: {
+                      content: 'AI Subtitle: Hello and welcome to Ak Cut!',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 34,
+                      color: '#ffffff',
+                      backgroundColor: 'rgba(0,0,0,0.8)',
+                      borderColor: '#000000',
+                      borderWidth: 0,
+                      alignment: 'center',
+                      bold: true,
+                      italic: false,
+                    },
                   });
                 }}
                 className="w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-semibold text-xs rounded-lg shadow-md transition"
