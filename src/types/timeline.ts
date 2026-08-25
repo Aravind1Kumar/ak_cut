@@ -86,6 +86,7 @@ export interface Keyframe {
 
 export interface Clip {
   id: string;
+  assetId?: string;     // Permanent asset ID in IndexedDB media_assets store
   trackId: string;
   name: string;
   type: MediaType;
@@ -93,7 +94,7 @@ export interface Clip {
   duration: number;     // Clip duration on timeline (seconds)
   mediaOffset: number;  // Start offset in source media (seconds)
   sourceDuration: number; // Total length of source media
-  src: string;          // ObjectURL or blob URL
+  src: string;          // Runtime ObjectURL or Blob URL
 
   // Speed multiplier & curve
   speed: number;
@@ -124,6 +125,7 @@ export interface Track {
 
 export interface MediaAsset {
   id: string;
+  assetId?: string;     // Permanent asset ID in IndexedDB media_assets store
   name: string;
   type: MediaType;
   src: string;

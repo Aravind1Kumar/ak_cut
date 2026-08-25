@@ -71,13 +71,16 @@ export const MediaLibrary: React.FC = () => {
       const type: MediaType = isVideo ? 'video' : isAudio ? 'audio' : isImage ? 'image' : 'video';
       const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
 
-      const assetId = addMediaAsset({
-        name: file.name,
-        type,
-        src: url,
-        duration: 10,
-        size: sizeFormatted,
-      });
+      const assetId = addMediaAsset(
+        {
+          name: file.name,
+          type,
+          src: url,
+          duration: 10,
+          size: sizeFormatted,
+        },
+        file
+      );
 
       let targetTrack = tracks.find((t) => t.type === type);
       let targetTrackId = targetTrack?.id || addTrack(type);
@@ -85,6 +88,7 @@ export const MediaLibrary: React.FC = () => {
       const clipId = addClipToTrack(targetTrackId, {
         name: file.name,
         type,
+        assetId,
         src: url,
         duration: 10,
         sourceDuration: 10,
@@ -104,13 +108,16 @@ export const MediaLibrary: React.FC = () => {
       const url = URL.createObjectURL(file);
       const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
 
-      addMediaAsset({
-        name: file.name,
-        type: 'audio',
-        src: url,
-        duration: 15,
-        size: sizeFormatted,
-      });
+      const assetId = addMediaAsset(
+        {
+          name: file.name,
+          type: 'audio',
+          src: url,
+          duration: 15,
+          size: sizeFormatted,
+        },
+        file
+      );
 
       let audioTrack = tracks.find((t) => t.type === 'audio');
       let audioTrackId = audioTrack?.id || addTrack('audio', 'Audio Track');
@@ -118,6 +125,7 @@ export const MediaLibrary: React.FC = () => {
       const clipId = addClipToTrack(audioTrackId, {
         name: file.name,
         type: 'audio',
+        assetId,
         src: url,
         duration: 15,
         sourceDuration: 15,
@@ -328,6 +336,7 @@ export const MediaLibrary: React.FC = () => {
                             addClipToTrack(targetTrackId, {
                               name: asset.name,
                               type: asset.type,
+                              assetId: asset.id,
                               src: asset.src,
                               duration: asset.duration,
                               sourceDuration: asset.duration,
@@ -465,6 +474,7 @@ export const MediaLibrary: React.FC = () => {
                           addClipToTrack(audioTrackId, {
                             name: asset.name,
                             type: 'audio',
+                            assetId: asset.id,
                             src: asset.src,
                             duration: asset.duration,
                             sourceDuration: asset.duration,

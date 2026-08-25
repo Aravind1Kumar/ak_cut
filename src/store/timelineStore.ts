@@ -15,7 +15,12 @@ import {
   SpeedCurveType,
   Keyframe,
 } from '../types/timeline';
-import { saveProjectStateToIndexedDB, loadProjectStateFromIndexedDB } from '../utils/projectPersistence';
+import {
+  saveProjectStateToIndexedDB,
+  loadProjectStateFromIndexedDB,
+  saveMediaAssetBlob,
+  restoreProjectWithMediaBlobs,
+} from '../utils/projectPersistence';
 
 const DEFAULT_TRANSFORM: TransformProps = {
   x: 0,
@@ -57,7 +62,6 @@ export type LayoutMode = 'auto' | 'mobile' | 'desktop';
 export type SaveStatus = 'Saved' | 'Saving...' | 'Unsaved changes';
 
 interface TimelineState {
-  // Playback
   isPlaying: boolean;
   currentTime: number;
   maxTimelineDuration: number;
@@ -68,38 +72,28 @@ interface TimelineState {
   rippleDeleteEnabled: boolean;
   saveStatus: SaveStatus;
 
-  // Responsive Layout Panel State
   layoutMode: LayoutMode;
   isLeftPanelOpen: boolean;
   isRightPanelOpen: boolean;
 
-  // Media Library Assets
   mediaAssets: MediaAsset[];
-
-  // Tracks & Clips
   tracks: Track[];
   selectedClipId: string | null;
   copiedClip: Clip | null;
 
-  // History
   history: Track[][];
   historyIndex: number;
 
-  // Helpers
   getProjectDuration: () => number;
-
-  // Persistence Actions
   saveProjectToDB: () => Promise<void>;
   restoreProjectFromDB: () => Promise<void>;
 
-  // Layout Actions
   setLayoutMode: (mode: LayoutMode) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setLeftPanelOpen: (open: boolean) => void;
   setRightPanelOpen: (open: boolean) => void;
 
-  // Actions
   setIsPlaying: (playing: boolean) => void;
   setCurrentTime: (time: number) => void;
   setZoomLevel: (zoom: number) => void;
@@ -108,18 +102,15 @@ interface TimelineState {
   setSnappingEnabled: (enabled: boolean) => void;
   setRippleDeleteEnabled: (enabled: boolean) => void;
 
-  // Asset Actions
-  addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>) => string;
+  addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>, fileBlob?: Blob) => string;
   deleteMediaAsset: (id: string) => void;
 
-  // Track Actions
   addTrack: (type: MediaType, name?: string) => string;
   deleteTrack: (trackId: string) => void;
   toggleTrackMute: (trackId: string) => void;
   toggleTrackHidden: (trackId: string) => void;
   toggleTrackLocked: (trackId: string) => void;
 
-  // Clip Editing Actions
   addClipToTrack: (trackId: string, clip: Partial<Clip>) => string;
   updateClip: (clipId: string, updates: Partial<Clip>) => void;
   updateClipTransform: (clipId: string, transform: Partial<TransformProps>) => void;
@@ -133,7 +124,6 @@ interface TimelineState {
   addKeyframeToClip: (clipId: string) => void;
   removeKeyframeFromClip: (clipId: string, keyframeId: string) => void;
 
-  // Advanced Operations
   splitSelectedClip: () => void;
   duplicateSelectedClip: () => void;
   deleteSelectedClip: () => void;
@@ -141,12 +131,9 @@ interface TimelineState {
   copySelectedClip: () => void;
   pasteClipAtPlayhead: () => void;
 
-  // History Actions
   pushHistory: () => void;
   undo: () => void;
   redo: () => void;
-
-  // Demo Project Initializer
   loadDemoProject: () => void;
 }
 
@@ -234,14 +221,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   restoreProjectFromDB: async () => {
-    const data = await loadProjectStateFromIndexedDB();
-    if (data && data.tracks) {
+    const rawState = await loadProjectStateFromIndexedDB();
+    if (rawState) {
+      const { tracks, mediaAssets } = await restoreProjectWithMediaBlobs(rawState);
       set({
-        aspectRatio: data.aspectRatio || '16:9',
-        zoomLevel: data.zoomLevel || 40,
-        maxTimelineDuration: data.maxTimelineDuration || 60,
-        tracks: data.tracks || [],
-        mediaAssets: data.mediaAssets || [],
+        aspectRatio: rawState.aspectRatio || '16:9',
+        zoomLevel: rawState.zoomLevel || 40,
+        maxTimelineDuration: rawState.maxTimelineDuration || 60,
+        tracks: tracks || [],
+        mediaAssets: mediaAssets || [],
         saveStatus: 'Saved',
       });
     }
@@ -264,13 +252,27 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   setSnappingEnabled: (enabled) => set({ snappingEnabled: enabled }),
   setRippleDeleteEnabled: (enabled) => set({ rippleDeleteEnabled: enabled }),
 
-  addMediaAsset: (asset) => {
+  addMediaAsset: (assetData, fileBlob) => {
     const id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newAsset: MediaAsset = {
-      ...asset,
+      ...assetData,
       id,
+      assetId: id,
       createdAt: Date.now(),
     };
+
+    if (fileBlob) {
+      saveMediaAssetBlob({
+        id,
+        name: assetData.name,
+        mimeType: fileBlob.type || 'video/mp4',
+        type: assetData.type as any,
+        blob: fileBlob,
+        size: fileBlob.size,
+        duration: assetData.duration,
+      });
+    }
+
     set((state) => ({ mediaAssets: [...state.mediaAssets, newAsset] }));
     get().saveProjectToDB();
     return id;
@@ -335,6 +337,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     const id = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newClip: Clip = {
       id,
+      assetId: clipData.assetId,
       trackId,
       name: clipData.name || 'Untitled Clip',
       type: clipData.type || 'video',
@@ -486,7 +489,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   addKeyframeToClip: (clipId) => {
     get().pushHistory();
-    const { currentTime, tracks } = get();
+    const { currentTime } = get();
 
     set((state) => ({
       tracks: state.tracks.map((track) => ({
@@ -542,7 +545,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
           id: undefined,
           startTime: currentTime,
           duration: secondSegmentDuration,
-          mediaOffset: clip.mediaOffset + firstSegmentDuration,
+          mediaOffset: clip.mediaOffset + firstSegmentDuration * clip.speed,
         });
 
         break;
@@ -569,7 +572,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   deleteSelectedClip: () => {
-    const { selectedClipId, tracks } = get();
+    const { selectedClipId } = get();
     if (!selectedClipId) return;
 
     get().pushHistory();
@@ -599,6 +602,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         get().addClipToTrack(audioTrackId, {
           name: `${clip.name} (Audio)`,
           type: 'audio',
+          assetId: clip.assetId,
           src: clip.src,
           startTime: clip.startTime,
           duration: clip.duration,
@@ -677,45 +681,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   loadDemoProject: () => {
-    get().restoreProjectFromDB().then(() => {
-      const currentTracks = get().tracks;
-      const hasClips = currentTracks.some((t) => t.clips.length > 0);
-      if (!hasClips) {
-        const demoClips: Partial<Clip>[] = [
-          {
-            name: 'Sample Nature Clip',
-            type: 'video',
-            src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-            startTime: 0,
-            duration: 12,
-            sourceDuration: 15,
-          },
-          {
-            name: 'Intro Title',
-            type: 'text',
-            startTime: 0.5,
-            duration: 4.5,
-            text: {
-              content: 'WELCOME TO AK CUT PRO',
-              fontFamily: "'Bebas Neue', sans-serif",
-              fontSize: 52,
-              color: '#00f2fe',
-              backgroundColor: 'rgba(0,0,0,0.7)',
-              borderColor: '#ffffff',
-              borderWidth: 2,
-              alignment: 'center',
-              bold: true,
-              italic: false,
-            },
-          },
-        ];
-
-        let videoTrack = currentTracks.find((t) => t.type === 'video');
-        let textTrack = currentTracks.find((t) => t.type === 'text');
-
-        if (videoTrack) get().addClipToTrack(videoTrack.id, demoClips[0]);
-        if (textTrack) get().addClipToTrack(textTrack.id, demoClips[1]);
-      }
-    });
+    get().restoreProjectFromDB();
   },
 }));

@@ -205,7 +205,7 @@ export async function exportVideoProject(
       }
     }
 
-    // Draw single clip helper with Aspect Ratio Preservation (Contain / Cover)
+    // Helper: Draw single clip with Aspect Ratio Preservation (Contain / Cover)
     const drawSingleClip = async (clip: Clip, time: number) => {
       const relTime = time - clip.startTime;
       const currentTransform = getInterpolatedTransform(clip, relTime);
@@ -245,7 +245,6 @@ export async function exportVideoProject(
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
 
-      // Draw Image with Aspect Ratio Fit
       if (clip.type === 'image') {
         const img = imageElementsMap.get(clip.id);
         if (img) {
@@ -258,9 +257,7 @@ export async function exportVideoProject(
           }
           ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
         }
-      }
-      // Draw Video with Aspect Ratio Fit & Shared Timeline Math
-      else if (clip.type === 'video') {
+      } else if (clip.type === 'video') {
         const vid = videoElementsMap.get(clip.id);
         if (vid) {
           const mediaTime = getSourceTimeForTimelineTime(clip, time);
@@ -274,9 +271,7 @@ export async function exportVideoProject(
           }
           ctx.drawImage(vid, -drawW / 2, -drawH / 2, drawW, drawH);
         }
-      }
-      // Draw Text Clip
-      else if (clip.type === 'text' && clip.text) {
+      } else if (clip.type === 'text' && clip.text) {
         const text = clip.text;
         ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 2}px ${text.fontFamily}`;
         ctx.textAlign = text.alignment;
@@ -325,12 +320,14 @@ export async function exportVideoProject(
       });
 
       // Group clips by transition range
-      for (const clip of visibleClips) {
+      for (let i = 0; i < visibleClips.length; i++) {
+        const clip = visibleClips[i];
         const relTime = time - clip.startTime;
         const hasTransition = clip.transition && clip.transition.type !== 'none';
 
         if (hasTransition && relTime < (clip.transition?.duration || 0.5)) {
-          // Real Two-Clip Transition Rendering via transitionEngine.ts
+          // Locate outgoing clip (previous clip on track or previous layer)
+          const outgoingClip = visibleClips[i - 1] || null;
           const transDur = clip.transition?.duration || 0.5;
           const transProgress = relTime / transDur;
 
@@ -341,7 +338,9 @@ export async function exportVideoProject(
             width,
             height,
             () => {
-              // Outgoing clip
+              if (outgoingClip) {
+                drawSingleClip(outgoingClip, time);
+              }
             },
             () => {
               drawSingleClip(clip, time);
@@ -450,7 +449,7 @@ export async function exportVideoProject(
 
     return mp4Blob;
   } finally {
-    // 7. Guaranteed Progressive Cleanup in try/finally
+    // 7. Progressive Memory Cleanup in chunks
     for (const frameName of createdFrameNames) {
       try {
         await ffmpeg.deleteFile(frameName);
