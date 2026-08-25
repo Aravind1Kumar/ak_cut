@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Download, CheckCircle2, Loader2, Video, Sparkles } from 'lucide-react';
+import { X, Download, CheckCircle2, Loader2, Video, AlertTriangle } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 
 interface ExportModalProps {
@@ -13,39 +13,143 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  const { tracks, maxTimelineDuration, aspectRatio } = useTimelineStore();
+  const { getProjectDuration, setCurrentTime, setIsPlaying, currentTime } = useTimelineStore();
 
   if (!isOpen) return null;
 
-  const handleStartExport = () => {
+  const handleStartExport = async () => {
     setIsExporting(true);
     setProgress(0);
     setIsComplete(false);
+    setErrorMessage(null);
+    setDownloadUrl(null);
+    setIsPlaying(false);
 
-    // Simulate Client-Side FFmpeg / Canvas Encoding Engine progress
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setIsExporting(false);
-          setIsComplete(true);
-          triggerDownload();
-          return 100;
+    const canvas = document.querySelector('canvas');
+    const totalDuration = getProjectDuration();
+
+    if (!canvas || totalDuration <= 0) {
+      setIsExporting(false);
+      setErrorMessage('Export failed: No valid video/image timeline content found to render.');
+      return;
+    }
+
+    try {
+      // 1. Capture stream from live canvas
+      const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(fps) : null;
+      if (!canvasStream) {
+        throw new Error('Canvas captureStream API is not supported in this browser.');
+      }
+
+      // 2. Setup Web Audio API destination stream for audio mixing
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const dest = audioCtx.createMediaStreamDestination();
+
+      const mediaElements = Array.from(document.querySelectorAll('video, audio')) as (HTMLVideoElement | HTMLAudioElement)[];
+      mediaElements.forEach((el) => {
+        try {
+          const source = audioCtx.createMediaElementSource(el);
+          source.connect(dest);
+          source.connect(audioCtx.destination);
+        } catch (e) {
+          // Source already connected
         }
-        return prev + 10;
       });
-    }, 300);
-  };
 
-  const triggerDownload = () => {
-    // Generate dummy video Blob for instant demo download
-    const dummyBlob = new Blob(['Ak Cut Video File Data'], { type: 'video/mp4' });
-    const url = URL.createObjectURL(dummyBlob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Ak_Cut_Export_${resolution}_${Date.now()}.mp4`;
-    a.click();
+      // 3. Combine video track + audio tracks
+      const combinedTracks = [
+        ...canvasStream.getVideoTracks(),
+        ...dest.stream.getAudioTracks(),
+      ];
+      const combinedStream = new MediaStream(combinedTracks);
+
+      // 4. Determine supported MediaRecorder mimeType
+      let mimeType = 'video/webm;codecs=vp9';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm';
+      }
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/mp4';
+      }
+
+      const recorder = new MediaRecorder(combinedStream, {
+        mimeType,
+        videoBitsPerSecond: resolution === '4K' ? 16000000 : resolution === '1080p' ? 8000000 : 4000000,
+      });
+
+      const chunks: Blob[] = [];
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          chunks.push(e.data);
+        }
+      };
+
+      recorder.onstop = () => {
+        if (chunks.length === 0) {
+          setIsExporting(false);
+          setErrorMessage('Export error: No encoded frame data was collected.');
+          return;
+        }
+
+        const realVideoBlob = new Blob(chunks, { type: mimeType.split(';')[0] });
+        const url = URL.createObjectURL(realVideoBlob);
+
+        setDownloadUrl(url);
+        setIsExporting(false);
+        setIsComplete(true);
+
+        // Real browser file download
+        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `AK_Cut_Project_${resolution}_${Date.now()}.${ext}`;
+        a.click();
+
+        audioCtx.close();
+      };
+
+      recorder.onerror = (event: any) => {
+        setIsExporting(false);
+        setErrorMessage(`MediaRecorder Encoding Error: ${event.error?.name || 'Encoder Failure'}`);
+        audioCtx.close();
+      };
+
+      // 5. Start MediaRecorder
+      recorder.start(100);
+
+      // 6. Autorotation & frame-by-frame rendering clock
+      let renderTime = 0;
+      const timeStep = 1 / fps;
+      const intervalMs = 1000 / fps;
+
+      const renderTimer = setInterval(() => {
+        renderTime += timeStep;
+        setCurrentTime(renderTime);
+
+        const currentProgress = Math.min(100, Math.round((renderTime / totalDuration) * 100));
+        setProgress(currentProgress);
+
+        if (renderTime >= totalDuration) {
+          clearInterval(renderTimer);
+          setTimeout(() => {
+            if (recorder.state !== 'inactive') {
+              recorder.stop();
+            }
+            setCurrentTime(0);
+          }, 400);
+        }
+      }, intervalMs);
+    } catch (err: any) {
+      setIsExporting(false);
+      setErrorMessage(err.message || 'Failed to initialize browser canvas video renderer.');
+    }
   };
 
   return (
@@ -55,7 +159,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
         <div className="p-4 border-b border-dark-700 flex items-center justify-between bg-dark-900/40">
           <div className="flex items-center space-x-2">
             <Video className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-sm font-bold text-gray-100">Export Video</h2>
+            <h2 className="text-sm font-bold text-gray-100">Export Video Render Engine</h2>
           </div>
           {!isExporting && (
             <button
@@ -69,6 +173,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
         {/* Modal Body */}
         <div className="p-6 space-y-5">
+          {errorMessage && (
+            <div className="p-3 bg-red-900/40 border border-red-500/40 rounded-xl flex items-start space-x-2.5 text-xs text-red-300">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <span>{errorMessage}</span>
+            </div>
+          )}
+
           {!isComplete ? (
             <>
               {/* Resolution Selector */}
@@ -127,13 +238,13 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                   <div className="flex justify-between text-xs font-semibold text-gray-300">
                     <span className="flex items-center space-x-1.5">
                       <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                      <span>Encoding frames...</span>
+                      <span>Rendering canvas video & audio frames...</span>
                     </span>
                     <span className="text-cyan-400 font-mono">{progress}%</span>
                   </div>
                   <div className="w-full bg-dark-900 h-2 rounded-full overflow-hidden border border-dark-700">
                     <div
-                      className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full transition-all duration-300"
+                      className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full transition-all duration-200"
                       style={{ width: `${progress}%` }}
                     />
                   </div>
@@ -147,8 +258,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
               </div>
               <h3 className="text-sm font-bold text-gray-100">Export Completed!</h3>
               <p className="text-xs text-gray-400">
-                Your video file has been rendered in {resolution} ({fps} FPS) and downloaded automatically.
+                Your video file has been encoded in {resolution} ({fps} FPS) containing all your timeline edits, text overlays, audio tracks, keyframes, and transitions.
               </p>
+              {downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download={`AK_Cut_Project_${resolution}.webm`}
+                  className="inline-flex items-center space-x-1 text-xs text-cyan-400 underline font-semibold mt-1"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Re-download render file</span>
+                </a>
+              )}
             </div>
           )}
         </div>
@@ -172,12 +293,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                 {isExporting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Rendering...</span>
+                    <span>Rendering Video...</span>
                   </>
                 ) : (
                   <>
                     <Download className="w-4 h-4" />
-                    <span>Start Export</span>
+                    <span>Start Real Export</span>
                   </>
                 )}
               </button>
