@@ -2,6 +2,7 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip } from '../types/timeline';
+import { getSourceTimeForTimelineTime } from './timelineMath';
 import { audioBufferToWav } from './audioWavEncoder';
 
 export interface ExportSettings {
@@ -10,6 +11,7 @@ export interface ExportSettings {
 }
 
 let ffmpegInstance: FFmpeg | null = null;
+let currentProgressListener: ((({ progress }: { progress: number }) => void)) | null = null;
 
 async function getFFmpegInstance(onProgress?: (percent: number) => void): Promise<FFmpeg> {
   if (!ffmpegInstance) {
@@ -26,37 +28,65 @@ async function getFFmpegInstance(onProgress?: (percent: number) => void): Promis
     });
   }
 
+  // Remove existing listener to prevent duplicate subscriptions
+  if (currentProgressListener) {
+    ffmpeg.off('progress', currentProgressListener);
+    currentProgressListener = null;
+  }
+
   if (onProgress) {
-    ffmpeg.on('progress', ({ progress }) => {
+    currentProgressListener = ({ progress }: { progress: number }) => {
       const percent = Math.min(100, Math.round(progress * 100));
       onProgress(percent);
-    });
+    };
+    ffmpeg.on('progress', currentProgressListener);
   }
 
   return ffmpeg;
 }
 
-// Deterministic Async Video Frame Seeking
+// Deterministic Async Frame Seeking (Using requestVideoFrameCallback with strict Watchdog Error Throw)
 function seekVideoFrame(video: HTMLVideoElement, targetTime: number): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const clampedTime = Math.max(0, targetTime);
-    if (Math.abs(video.currentTime - clampedTime) < 0.01) {
+
+    // Watchdog timer: fails export explicitly if video element hangs/stalls
+    const watchdog = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Video Frame Decode Timeout: Failed to seek/decode frame at timestamp ${clampedTime.toFixed(2)}s.`));
+    }, 5000);
+
+    const cleanup = () => {
+      clearTimeout(watchdog);
+      video.removeEventListener('seeked', onSeeked);
+      video.removeEventListener('error', onError);
+    };
+
+    const onSeeked = () => {
+      if ('requestVideoFrameCallback' in video) {
+        (video as any).requestVideoFrameCallback(() => {
+          cleanup();
+          resolve();
+        });
+      } else {
+        cleanup();
+        resolve();
+      }
+    };
+
+    const onError = () => {
+      cleanup();
+      reject(new Error(`Video Media Error: Failed to load media frame at ${clampedTime.toFixed(2)}s.`));
+    };
+
+    if (Math.abs(video.currentTime - clampedTime) < 0.005) {
+      cleanup();
       resolve();
       return;
     }
 
-    const timeout = setTimeout(() => {
-      video.removeEventListener('seeked', onSeeked);
-      resolve();
-    }, 400); // 400ms fallback safety limit
-
-    const onSeeked = () => {
-      clearTimeout(timeout);
-      video.removeEventListener('seeked', onSeeked);
-      resolve();
-    };
-
     video.addEventListener('seeked', onSeeked);
+    video.addEventListener('error', onError);
     video.currentTime = clampedTime;
   });
 }
@@ -111,10 +141,9 @@ export async function exportVideoProject(
     throw new Error('Cannot export empty project. Please add media clips to the timeline.');
   }
 
-  // 1. Initialize FFmpeg WASM
   const ffmpeg = await getFFmpegInstance(onProgress);
 
-  // 2. Setup Export Canvas Dimensions
+  // Export Canvas Dimensions
   let width = 1920;
   let height = 1080;
   if (aspectRatio === '9:16') {
@@ -145,281 +174,262 @@ export async function exportVideoProject(
   const totalFrames = Math.ceil(duration * fps);
   const frameDuration = 1 / fps;
 
-  // Pre-load Image & Video Elements for Rendering
   const imageElementsMap = new Map<string, HTMLImageElement>();
   const videoElementsMap = new Map<string, HTMLVideoElement>();
-
-  for (const track of tracks) {
-    for (const clip of track.clips) {
-      if (clip.type === 'image' && clip.src) {
-        const img = new Image();
-        img.src = clip.src;
-        img.crossOrigin = 'anonymous';
-        await new Promise((res) => {
-          if (img.complete) res(null);
-          else img.onload = img.onerror = () => res(null);
-        });
-        imageElementsMap.set(clip.id, img);
-      } else if (clip.type === 'video' && clip.src) {
-        const vid = document.createElement('video');
-        vid.src = clip.src;
-        vid.crossOrigin = 'anonymous';
-        vid.muted = true;
-        await new Promise((res) => {
-          vid.onloadeddata = () => res(null);
-          vid.onerror = () => res(null);
-        });
-        videoElementsMap.set(clip.id, vid);
-      }
-    }
-  }
-
-  // 3. Render Frames & Write PNGs to FFmpeg Virtual Filesystem
-  for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
-    const time = frameIdx * frameDuration;
-
-    // Clear Canvas
-    ctx.fillStyle = '#0a0a0c';
-    ctx.fillRect(0, 0, width, height);
-
-    // Filter visible clips at current time
-    const visibleClips: Clip[] = [];
-    tracks.forEach((track) => {
-      if (track.hidden) return;
-      track.clips.forEach((clip) => {
-        if (time >= clip.startTime && time <= clip.startTime + clip.duration) {
-          visibleClips.push(clip);
-        }
-      });
-    });
-
-    // Layer Composite Sorting (Background Videos/Images first, Text & Subtitles LAST ON TOP)
-    visibleClips.sort((a, b) => {
-      const typePriority: Record<string, number> = { audio: 0, video: 1, image: 2, text: 3 };
-      const priorityA = typePriority[a.type] ?? 1;
-      const priorityB = typePriority[b.type] ?? 1;
-
-      if (priorityA !== priorityB) {
-        return priorityA - priorityB;
-      }
-
-      const trackAIdx = tracks.findIndex((t) => t.id === a.trackId);
-      const trackBIdx = tracks.findIndex((t) => t.id === b.trackId);
-      return trackAIdx - trackBIdx;
-    });
-
-    for (const clip of visibleClips) {
-      const relTime = time - clip.startTime;
-      const currentTransform = getInterpolatedTransform(clip, relTime);
-
-      ctx.save();
-
-      // Masking Path
-      if (clip.mask && clip.mask.type !== 'none') {
-        ctx.beginPath();
-        if (clip.mask.type === 'circle') {
-          ctx.arc(width / 2, height / 2, Math.min(width, height) / 3, 0, Math.PI * 2);
-        } else if (clip.mask.type === 'rectangle') {
-          ctx.rect(width * 0.15, height * 0.15, width * 0.7, height * 0.7);
-        } else if (clip.mask.type === 'splitLeft') {
-          ctx.rect(0, 0, width / 2, height);
-        } else if (clip.mask.type === 'pen' && clip.mask.points && clip.mask.points.length > 0) {
-          clip.mask.points.forEach((pt, i) => {
-            const px = width / 2 + (pt.x / 100) * width;
-            const py = height / 2 + (pt.y / 100) * height;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          });
-          ctx.closePath();
-        }
-        ctx.clip();
-      }
-
-      // Center transform
-      const centerX = width / 2 + (currentTransform.x / 100) * width;
-      const centerY = height / 2 + (currentTransform.y / 100) * height;
-      ctx.translate(centerX, centerY);
-      ctx.rotate((currentTransform.rotation * Math.PI) / 180);
-      ctx.scale(currentTransform.scale, currentTransform.scale);
-
-      // Transition Opacity
-      let opacity = currentTransform.opacity;
-      if (clip.transition && clip.transition.type !== 'none') {
-        const transDur = clip.transition.duration || 0.5;
-        if (relTime < transDur) {
-          opacity *= relTime / transDur;
-        }
-      }
-      ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
-
-      // Filter
-      const f = clip.filter;
-      ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
-
-      // Render Image Clip
-      if (clip.type === 'image') {
-        const img = imageElementsMap.get(clip.id);
-        if (img) {
-          ctx.drawImage(img, -width / 2, -height / 2, width, height);
-        }
-      }
-      // Render Video Clip with Deterministic Async Frame Seeking
-      else if (clip.type === 'video') {
-        const vid = videoElementsMap.get(clip.id);
-        if (vid) {
-          const mediaTime = Math.min(
-            clip.sourceDuration || 999,
-            clip.mediaOffset + relTime * clip.speed
-          );
-          await seekVideoFrame(vid, mediaTime);
-          ctx.drawImage(vid, -width / 2, -height / 2, width, height);
-        }
-      }
-      // Render Text Clip
-      else if (clip.type === 'text' && clip.text) {
-        const text = clip.text;
-        ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 2}px ${text.fontFamily}`;
-        ctx.textAlign = text.alignment;
-        ctx.textBaseline = 'middle';
-
-        if (text.backgroundColor !== 'transparent') {
-          const metrics = ctx.measureText(text.content);
-          const padding = 30;
-          ctx.fillStyle = text.backgroundColor;
-          ctx.fillRect(
-            -metrics.width / 2 - padding,
-            -text.fontSize - padding / 2,
-            metrics.width + padding * 2,
-            text.fontSize * 2 + padding
-          );
-        }
-
-        if (text.borderWidth > 0) {
-          ctx.strokeStyle = text.borderColor;
-          ctx.lineWidth = text.borderWidth * 2;
-          ctx.strokeText(text.content, 0, 0);
-        }
-
-        ctx.fillStyle = text.color;
-        ctx.fillText(text.content, 0, 0);
-      }
-
-      ctx.restore();
-    }
-
-    // Export frame to Blob -> Uint8Array -> Write to FFmpeg Virtual FS
-    const frameBlob: Blob = await new Promise((res) => exportCanvas.toBlob((b) => res(b!), 'image/png'));
-    const frameData = await fetchFile(frameBlob);
-    const frameName = `frame_${frameIdx.toString().padStart(4, '0')}.png`;
-    await ffmpeg.writeFile(frameName, frameData);
-
-    // Report frame rendering progress (0% -> 60%)
-    if (onProgress) {
-      onProgress(Math.round((frameIdx / totalFrames) * 60));
-    }
-  }
-
-  // 4. Web Audio API Offline Audio Mixing & WAV Encoding
+  const createdFrameNames: string[] = [];
   let hasAudioInput = false;
+
   try {
-    const sampleRate = 44100;
-    const offlineAudioCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
-      2,
-      Math.max(1, Math.ceil(duration * sampleRate)),
-      sampleRate
-    );
-
-    let audioSourceCount = 0;
+    // Pre-load Media Assets
     for (const track of tracks) {
-      if (track.muted) continue;
       for (const clip of track.clips) {
-        if ((clip.type === 'audio' || clip.type === 'video') && clip.src && !clip.audio.muted) {
-          try {
-            const resp = await fetch(clip.src);
-            const buf = await resp.arrayBuffer();
-            const decodedAudio = await offlineAudioCtx.decodeAudioData(buf);
-
-            const sourceNode = offlineAudioCtx.createBufferSource();
-            sourceNode.buffer = decodedAudio;
-            sourceNode.playbackRate.value = clip.speed || 1;
-
-            const gainNode = offlineAudioCtx.createGain();
-            gainNode.gain.value = Math.max(0, Math.min(2, clip.audio.volume));
-
-            sourceNode.connect(gainNode);
-            gainNode.connect(offlineAudioCtx.destination);
-
-            const startOffset = Math.max(0, clip.startTime);
-            const playDuration = Math.min(clip.duration, decodedAudio.duration / clip.speed);
-            sourceNode.start(startOffset, clip.mediaOffset, playDuration);
-            audioSourceCount++;
-          } catch (e) {}
+        if (clip.type === 'image' && clip.src) {
+          const img = new Image();
+          img.src = clip.src;
+          img.crossOrigin = 'anonymous';
+          await new Promise((res) => {
+            if (img.complete) res(null);
+            else img.onload = img.onerror = () => res(null);
+          });
+          imageElementsMap.set(clip.id, img);
+        } else if (clip.type === 'video' && clip.src) {
+          const vid = document.createElement('video');
+          vid.src = clip.src;
+          vid.crossOrigin = 'anonymous';
+          vid.muted = true;
+          await new Promise((res) => {
+            vid.onloadeddata = () => res(null);
+            vid.onerror = () => res(null);
+          });
+          videoElementsMap.set(clip.id, vid);
         }
       }
     }
 
-    if (audioSourceCount > 0) {
-      const renderedAudioBuffer = await offlineAudioCtx.startRendering();
-      const wavBytes = audioBufferToWav(renderedAudioBuffer);
-      await ffmpeg.writeFile('audio_mix.wav', wavBytes);
-      hasAudioInput = true;
+    // 3. Render Frames & Write PNGs to FFmpeg Virtual Filesystem
+    for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
+      const time = frameIdx * frameDuration;
+
+      ctx.fillStyle = '#0a0a0c';
+      ctx.fillRect(0, 0, width, height);
+
+      const visibleClips: Clip[] = [];
+      tracks.forEach((track) => {
+        if (track.hidden) return;
+        track.clips.forEach((clip) => {
+          if (time >= clip.startTime && time <= clip.startTime + clip.duration) {
+            visibleClips.push(clip);
+          }
+        });
+      });
+
+      visibleClips.sort((a, b) => {
+        const typePriority: Record<string, number> = { audio: 0, video: 1, image: 2, text: 3 };
+        const priorityA = typePriority[a.type] ?? 1;
+        const priorityB = typePriority[b.type] ?? 1;
+
+        if (priorityA !== priorityB) {
+          return priorityA - priorityB;
+        }
+
+        const trackAIdx = tracks.findIndex((t) => t.id === a.trackId);
+        const trackBIdx = tracks.findIndex((t) => t.id === b.trackId);
+        return trackAIdx - trackBIdx;
+      });
+
+      for (const clip of visibleClips) {
+        const relTime = time - clip.startTime;
+        const currentTransform = getInterpolatedTransform(clip, relTime);
+
+        ctx.save();
+
+        if (clip.mask && clip.mask.type !== 'none') {
+          ctx.beginPath();
+          if (clip.mask.type === 'circle') {
+            ctx.arc(width / 2, height / 2, Math.min(width, height) / 3, 0, Math.PI * 2);
+          } else if (clip.mask.type === 'rectangle') {
+            ctx.rect(width * 0.15, height * 0.15, width * 0.7, height * 0.7);
+          } else if (clip.mask.type === 'splitLeft') {
+            ctx.rect(0, 0, width / 2, height);
+          } else if (clip.mask.type === 'pen' && clip.mask.points && clip.mask.points.length > 0) {
+            clip.mask.points.forEach((pt, i) => {
+              const px = width / 2 + (pt.x / 100) * width;
+              const py = height / 2 + (pt.y / 100) * height;
+              if (i === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            });
+            ctx.closePath();
+          }
+          ctx.clip();
+        }
+
+        const centerX = width / 2 + (currentTransform.x / 100) * width;
+        const centerY = height / 2 + (currentTransform.y / 100) * height;
+        ctx.translate(centerX, centerY);
+        ctx.rotate((currentTransform.rotation * Math.PI) / 180);
+        ctx.scale(currentTransform.scale, currentTransform.scale);
+
+        let opacity = currentTransform.opacity;
+        if (clip.transition && clip.transition.type !== 'none') {
+          const transDur = clip.transition.duration || 0.5;
+          if (relTime < transDur) {
+            opacity *= relTime / transDur;
+          }
+        }
+        ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+
+        const f = clip.filter;
+        ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
+
+        if (clip.type === 'image') {
+          const img = imageElementsMap.get(clip.id);
+          if (img) {
+            ctx.drawImage(img, -width / 2, -height / 2, width, height);
+          }
+        } else if (clip.type === 'video') {
+          const vid = videoElementsMap.get(clip.id);
+          if (vid) {
+            const mediaTime = getSourceTimeForTimelineTime(clip, time);
+            await seekVideoFrame(vid, mediaTime);
+            ctx.drawImage(vid, -width / 2, -height / 2, width, height);
+          }
+        } else if (clip.type === 'text' && clip.text) {
+          const text = clip.text;
+          ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 2}px ${text.fontFamily}`;
+          ctx.textAlign = text.alignment;
+          ctx.textBaseline = 'middle';
+
+          if (text.backgroundColor !== 'transparent') {
+            const metrics = ctx.measureText(text.content);
+            const padding = 30;
+            ctx.fillStyle = text.backgroundColor;
+            ctx.fillRect(
+              -metrics.width / 2 - padding,
+              -text.fontSize - padding / 2,
+              metrics.width + padding * 2,
+              text.fontSize * 2 + padding
+            );
+          }
+
+          if (text.borderWidth > 0) {
+            ctx.strokeStyle = text.borderColor;
+            ctx.lineWidth = text.borderWidth * 2;
+            ctx.strokeText(text.content, 0, 0);
+          }
+
+          ctx.fillStyle = text.color;
+          ctx.fillText(text.content, 0, 0);
+        }
+
+        ctx.restore();
+      }
+
+      const frameBlob: Blob = await new Promise((res) => exportCanvas.toBlob((b) => res(b!), 'image/png'));
+      const frameData = await fetchFile(frameBlob);
+      const frameName = `frame_${frameIdx.toString().padStart(4, '0')}.png`;
+      await ffmpeg.writeFile(frameName, frameData);
+      createdFrameNames.push(frameName);
+
+      if (onProgress) {
+        onProgress(Math.round((frameIdx / totalFrames) * 60));
+      }
     }
-  } catch (e) {
-    console.warn('Audio mixing skipped or unavailable:', e);
-  }
 
-  // 5. Run FFmpeg Encoding Command to produce MP4 with Audio + Video
-  const ffmpegArgs = [
-    '-framerate',
-    `${fps}`,
-    '-i',
-    'frame_%04d.png',
-  ];
-
-  if (hasAudioInput) {
-    ffmpegArgs.push('-i', 'audio_mix.wav');
-  }
-
-  ffmpegArgs.push(
-    '-c:v',
-    'libx264',
-    '-pix_fmt',
-    'yuv420p',
-    '-preset',
-    'ultrafast'
-  );
-
-  if (hasAudioInput) {
-    ffmpegArgs.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
-  }
-
-  ffmpegArgs.push('output.mp4');
-
-  await ffmpeg.exec(ffmpegArgs);
-
-  // 6. Read Encoded Output MP4 File from Virtual FS
-  const outputData = (await ffmpeg.readFile('output.mp4')) as Uint8Array;
-  const mp4Blob = new Blob([new Uint8Array(outputData)], { type: 'video/mp4' });
-
-  // 7. Progressive Memory Cleanup
-  for (let i = 0; i < totalFrames; i++) {
-    const frameName = `frame_${i.toString().padStart(4, '0')}.png`;
+    // 4. Audio Mixing using getSourceTimeForTimelineTime math
     try {
-      await ffmpeg.deleteFile(frameName);
-    } catch (e) {}
-  }
-  if (hasAudioInput) {
+      const sampleRate = 44100;
+      const offlineAudioCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
+        2,
+        Math.max(1, Math.ceil(duration * sampleRate)),
+        sampleRate
+      );
+
+      let audioSourceCount = 0;
+      for (const track of tracks) {
+        if (track.muted) continue;
+        for (const clip of track.clips) {
+          if ((clip.type === 'audio' || clip.type === 'video') && clip.src && !clip.audio.muted) {
+            try {
+              const resp = await fetch(clip.src);
+              const buf = await resp.arrayBuffer();
+              const decodedAudio = await offlineAudioCtx.decodeAudioData(buf);
+
+              const sourceNode = offlineAudioCtx.createBufferSource();
+              sourceNode.buffer = decodedAudio;
+              sourceNode.playbackRate.value = clip.speed || 1;
+
+              const gainNode = offlineAudioCtx.createGain();
+              gainNode.gain.value = Math.max(0, Math.min(2, clip.audio.volume));
+
+              sourceNode.connect(gainNode);
+              gainNode.connect(offlineAudioCtx.destination);
+
+              const startOffset = Math.max(0, clip.startTime);
+              const sourceOffset = clip.mediaOffset || 0;
+              const playDuration = Math.min(clip.duration, (decodedAudio.duration - sourceOffset) / clip.speed);
+
+              sourceNode.start(startOffset, sourceOffset, playDuration);
+              audioSourceCount++;
+            } catch (e) {}
+          }
+        }
+      }
+
+      if (audioSourceCount > 0) {
+        const renderedAudioBuffer = await offlineAudioCtx.startRendering();
+        const wavBytes = audioBufferToWav(renderedAudioBuffer);
+        await ffmpeg.writeFile('audio_mix.wav', wavBytes);
+        hasAudioInput = true;
+      }
+    } catch (e) {
+      console.warn('Audio mixing skipped:', e);
+    }
+
+    // 5. Execute FFmpeg Command
+    const ffmpegArgs = ['-framerate', `${fps}`, '-i', 'frame_%04d.png'];
+    if (hasAudioInput) ffmpegArgs.push('-i', 'audio_mix.wav');
+
+    ffmpegArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast');
+    if (hasAudioInput) ffmpegArgs.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
+    ffmpegArgs.push('output.mp4');
+
+    await ffmpeg.exec(ffmpegArgs);
+
+    // 6. Validate Output MP4 File
+    const outputData = (await ffmpeg.readFile('output.mp4')) as Uint8Array;
+    if (!outputData || outputData.length === 0) {
+      throw new Error('Export Validation Failed: Generated MP4 file is 0 bytes.');
+    }
+
+    const mp4Blob = new Blob([new Uint8Array(outputData)], { type: 'video/mp4' });
+
+    if (onProgress) {
+      onProgress(100);
+    }
+
+    return mp4Blob;
+  } finally {
+    // 7. Guaranteed Progressive Cleanup in try/finally
+    for (const frameName of createdFrameNames) {
+      try {
+        await ffmpeg.deleteFile(frameName);
+      } catch (e) {}
+    }
+
+    if (hasAudioInput) {
+      try {
+        await ffmpeg.deleteFile('audio_mix.wav');
+      } catch (e) {}
+    }
+
     try {
-      await ffmpeg.deleteFile('audio_mix.wav');
+      await ffmpeg.deleteFile('output.mp4');
     } catch (e) {}
-  }
-  try {
-    await ffmpeg.deleteFile('output.mp4');
-  } catch (e) {}
 
-  if (onProgress) {
-    onProgress(100);
+    // Cleanup Progress Listener
+    if (currentProgressListener) {
+      ffmpeg.off('progress', currentProgressListener);
+      currentProgressListener = null;
+    }
   }
-
-  return mp4Blob;
 }
