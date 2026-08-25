@@ -174,10 +174,19 @@ export const PreviewPlayer: React.FC = () => {
       });
     });
 
+    // Layer Composite Sorting: Background Video/Image first, Text & Subtitles ALWAYS LAST (ON TOP)
     visibleClips.sort((a, b) => {
+      const typePriority: Record<string, number> = { audio: 0, video: 1, image: 2, text: 3 };
+      const priorityA = typePriority[a.type] ?? 1;
+      const priorityB = typePriority[b.type] ?? 1;
+
+      if (priorityA !== priorityB) {
+        return priorityA - priorityB;
+      }
+
       const trackAIdx = tracks.findIndex((t) => t.id === a.trackId);
       const trackBIdx = tracks.findIndex((t) => t.id === b.trackId);
-      return trackBIdx - trackAIdx;
+      return trackAIdx - trackBIdx;
     });
 
     activeVideoElementsRef.current.forEach((videoEl, clipId) => {
