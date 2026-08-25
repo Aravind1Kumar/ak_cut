@@ -21,7 +21,6 @@ import {
   Layers,
   FileAudio,
   ArrowRightLeft,
-  GripVertical,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track, MediaType } from '../types/timeline';
@@ -149,13 +148,13 @@ export const Timeline: React.FC = () => {
   const getTrackIcon = (type: MediaType) => {
     switch (type) {
       case 'video':
-        return <Film className="w-3.5 h-3.5 text-cyan-400" />;
+        return <Film className="w-3.5 h-3.5 text-cyan-400 shrink-0" />;
       case 'audio':
-        return <Music className="w-3.5 h-3.5 text-green-400" />;
+        return <Music className="w-3.5 h-3.5 text-green-400 shrink-0" />;
       case 'text':
-        return <Type className="w-3.5 h-3.5 text-purple-400" />;
+        return <Type className="w-3.5 h-3.5 text-purple-400 shrink-0" />;
       case 'image':
-        return <ImageIcon className="w-3.5 h-3.5 text-amber-400" />;
+        return <ImageIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
     }
   };
 
@@ -392,16 +391,14 @@ export const Timeline: React.FC = () => {
                       {/* Left Edge Drag Handle (Shorten / Trim Start) */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
-                        className={`absolute left-0 top-0 bottom-0 w-3 hover:w-4 flex items-center justify-center cursor-ew-resize rounded-l transition-all ${
-                          isSelected ? 'bg-cyan-400 text-dark-900 font-bold' : 'bg-white/20 hover:bg-cyan-400'
+                        className={`absolute left-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-l transition-all ${
+                          isSelected ? 'bg-cyan-400' : 'bg-white/30 hover:bg-cyan-400'
                         }`}
                         title="Drag to trim start duration"
-                      >
-                        <GripVertical className="w-3 h-3" />
-                      </div>
+                      />
 
                       {/* Clip Label */}
-                      <div className="flex items-center space-x-1.5 ml-3 truncate">
+                      <div className="flex items-center space-x-1.5 ml-2.5 truncate">
                         {getTrackIcon(clip.type)}
                         <span className="text-[11px] font-bold text-white truncate">{clip.name}</span>
                       </div>
@@ -415,20 +412,18 @@ export const Timeline: React.FC = () => {
                       )}
 
                       {/* Duration Badge */}
-                      <span className="text-[10px] font-mono text-gray-300 mr-3 bg-black/40 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-gray-300 mr-2.5 bg-black/40 px-1.5 py-0.5 rounded">
                         {clip.duration.toFixed(1)}s
                       </span>
 
                       {/* Right Edge Drag Handle (Shorten / Trim End) */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'right')}
-                        className={`absolute right-0 top-0 bottom-0 w-3 hover:w-4 flex items-center justify-center cursor-ew-resize rounded-r transition-all ${
-                          isSelected ? 'bg-cyan-400 text-dark-900 font-bold' : 'bg-white/20 hover:bg-cyan-400'
+                        className={`absolute right-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-r transition-all ${
+                          isSelected ? 'bg-cyan-400' : 'bg-white/30 hover:bg-cyan-400'
                         }`}
                         title="Drag to trim end duration"
-                      >
-                        <GripVertical className="w-3 h-3" />
-                      </div>
+                      />
                     </div>
                   );
                 })}
