@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Download, CheckCircle2, Loader2, Video, AlertTriangle } from 'lucide-react';
-import { useTimelineStore } from '../store/timelineStore';
+import { exportVideoProject } from '../utils/videoExporter';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -16,8 +16,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
-  const { getProjectDuration, setCurrentTime, setIsPlaying, currentTime } = useTimelineStore();
-
   if (!isOpen) return null;
 
   const handleStartExport = async () => {
@@ -26,129 +24,27 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
     setIsComplete(false);
     setErrorMessage(null);
     setDownloadUrl(null);
-    setIsPlaying(false);
-
-    const canvas = document.querySelector('canvas');
-    const totalDuration = getProjectDuration();
-
-    if (!canvas || totalDuration <= 0) {
-      setIsExporting(false);
-      setErrorMessage('Export failed: No valid video/image timeline content found to render.');
-      return;
-    }
 
     try {
-      // 1. Capture stream from live canvas
-      const canvasStream = (canvas as any).captureStream ? (canvas as any).captureStream(fps) : null;
-      if (!canvasStream) {
-        throw new Error('Canvas captureStream API is not supported in this browser.');
-      }
+      // Execute Real FFmpeg WASM Exporter Pipeline
+      const mp4Blob = await exportVideoProject(
+        { resolution, fps },
+        (percent) => setProgress(percent)
+      );
 
-      // 2. Setup Web Audio API destination stream for audio mixing
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const dest = audioCtx.createMediaStreamDestination();
+      const url = URL.createObjectURL(mp4Blob);
+      setDownloadUrl(url);
+      setIsExporting(false);
+      setIsComplete(true);
 
-      const mediaElements = Array.from(document.querySelectorAll('video, audio')) as (HTMLVideoElement | HTMLAudioElement)[];
-      mediaElements.forEach((el) => {
-        try {
-          const source = audioCtx.createMediaElementSource(el);
-          source.connect(dest);
-          source.connect(audioCtx.destination);
-        } catch (e) {
-          // Source already connected
-        }
-      });
-
-      // 3. Combine video track + audio tracks
-      const combinedTracks = [
-        ...canvasStream.getVideoTracks(),
-        ...dest.stream.getAudioTracks(),
-      ];
-      const combinedStream = new MediaStream(combinedTracks);
-
-      // 4. Determine supported MediaRecorder mimeType
-      let mimeType = 'video/webm;codecs=vp9';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm;codecs=vp8';
-      }
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm';
-      }
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/mp4';
-      }
-
-      const recorder = new MediaRecorder(combinedStream, {
-        mimeType,
-        videoBitsPerSecond: resolution === '4K' ? 16000000 : resolution === '1080p' ? 8000000 : 4000000,
-      });
-
-      const chunks: Blob[] = [];
-
-      recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          chunks.push(e.data);
-        }
-      };
-
-      recorder.onstop = () => {
-        if (chunks.length === 0) {
-          setIsExporting(false);
-          setErrorMessage('Export error: No encoded frame data was collected.');
-          return;
-        }
-
-        const realVideoBlob = new Blob(chunks, { type: mimeType.split(';')[0] });
-        const url = URL.createObjectURL(realVideoBlob);
-
-        setDownloadUrl(url);
-        setIsExporting(false);
-        setIsComplete(true);
-
-        // Real browser file download
-        const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `AK_Cut_Project_${resolution}_${Date.now()}.${ext}`;
-        a.click();
-
-        audioCtx.close();
-      };
-
-      recorder.onerror = (event: any) => {
-        setIsExporting(false);
-        setErrorMessage(`MediaRecorder Encoding Error: ${event.error?.name || 'Encoder Failure'}`);
-        audioCtx.close();
-      };
-
-      // 5. Start MediaRecorder
-      recorder.start(100);
-
-      // 6. Autorotation & frame-by-frame rendering clock
-      let renderTime = 0;
-      const timeStep = 1 / fps;
-      const intervalMs = 1000 / fps;
-
-      const renderTimer = setInterval(() => {
-        renderTime += timeStep;
-        setCurrentTime(renderTime);
-
-        const currentProgress = Math.min(100, Math.round((renderTime / totalDuration) * 100));
-        setProgress(currentProgress);
-
-        if (renderTime >= totalDuration) {
-          clearInterval(renderTimer);
-          setTimeout(() => {
-            if (recorder.state !== 'inactive') {
-              recorder.stop();
-            }
-            setCurrentTime(0);
-          }, 400);
-        }
-      }, intervalMs);
+      // Trigger instant browser download of real MP4 file
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `AK_Cut_Project_${resolution}_${Date.now()}.mp4`;
+      a.click();
     } catch (err: any) {
       setIsExporting(false);
-      setErrorMessage(err.message || 'Failed to initialize browser canvas video renderer.');
+      setErrorMessage(err.message || 'FFmpeg WASM Video Export failed. Please check browser WASM/SharedArrayBuffer permissions.');
     }
   };
 
@@ -159,7 +55,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
         <div className="p-4 border-b border-dark-700 flex items-center justify-between bg-dark-900/40">
           <div className="flex items-center space-x-2">
             <Video className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-sm font-bold text-gray-100">Export Video Render Engine</h2>
+            <h2 className="text-sm font-bold text-gray-100">FFmpeg WASM Video Exporter</h2>
           </div>
           {!isExporting && (
             <button
@@ -238,7 +134,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                   <div className="flex justify-between text-xs font-semibold text-gray-300">
                     <span className="flex items-center space-x-1.5">
                       <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                      <span>Rendering canvas video & audio frames...</span>
+                      <span>Encoding real MP4 via FFmpeg WASM...</span>
                     </span>
                     <span className="text-cyan-400 font-mono">{progress}%</span>
                   </div>
@@ -256,18 +152,18 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
               <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-7 h-7" />
               </div>
-              <h3 className="text-sm font-bold text-gray-100">Export Completed!</h3>
+              <h3 className="text-sm font-bold text-gray-100">MP4 Video Export Completed!</h3>
               <p className="text-xs text-gray-400">
-                Your video file has been encoded in {resolution} ({fps} FPS) containing all your timeline edits, text overlays, audio tracks, keyframes, and transitions.
+                Your video file has been encoded into a real MP4 file ({resolution}, {fps} FPS) using FFmpeg WASM and downloaded automatically.
               </p>
               {downloadUrl && (
                 <a
                   href={downloadUrl}
-                  download={`AK_Cut_Project_${resolution}.webm`}
+                  download={`AK_Cut_Project_${resolution}.mp4`}
                   className="inline-flex items-center space-x-1 text-xs text-cyan-400 underline font-semibold mt-1"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Re-download render file</span>
+                  <span>Re-download MP4 file</span>
                 </a>
               )}
             </div>
@@ -293,12 +189,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
                 {isExporting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Rendering Video...</span>
+                    <span>Encoding MP4...</span>
                   </>
                 ) : (
                   <>
                     <Download className="w-4 h-4" />
-                    <span>Start Real Export</span>
+                    <span>Start FFmpeg WASM Export</span>
                   </>
                 )}
               </button>
