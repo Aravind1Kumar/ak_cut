@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Keyframe } from '../types/timeline';
+import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
+import { renderTransitionEffect } from '../utils/transitionEngine';
 
 export const PreviewPlayer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -134,36 +136,41 @@ export const PreviewPlayer: React.FC = () => {
     return clip.transform;
   };
 
-  // Render Frame Engine (Video, Image, Text, Keyframe, Masking, Pen Tool, Chroma Key)
+  // Render Canvas Frame
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let width = 1280;
-    let height = 720;
+    let targetWidth = 1280;
+    let targetHeight = 720;
     if (aspectRatio === '9:16') {
-      width = 720;
-      height = 1280;
+      targetWidth = 720;
+      targetHeight = 1280;
     } else if (aspectRatio === '1:1') {
-      width = 1080;
-      height = 1080;
+      targetWidth = 1080;
+      targetHeight = 1080;
     } else if (aspectRatio === '4:3') {
-      width = 960;
-      height = 720;
+      targetWidth = 1024;
+      targetHeight = 768;
     }
 
-    if (canvas.width !== width || canvas.height !== height) {
-      canvas.width = width;
-      canvas.height = height;
-    }
+    // Scale canvas into container with aspect ratio preservation
+    const containerW = containerSize.width || 640;
+    const containerH = containerSize.height || 360;
+    const scaleFactor = Math.min((containerW - 32) / targetWidth, (containerH - 48) / targetHeight, 1);
 
-    // Clear background
-    ctx.fillStyle = '#0a0a0c';
-    ctx.fillRect(0, 0, width, height);
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    canvas.style.width = `${targetWidth * scaleFactor}px`;
+    canvas.style.height = `${targetHeight * scaleFactor}px`;
 
-    // Active clips
+    // Clear Canvas
+    ctx.fillStyle = '#09090b';
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+    // Visible Clips at currentTime
     const visibleClips: Clip[] = [];
     tracks.forEach((track) => {
       if (track.hidden) return;
@@ -174,7 +181,7 @@ export const PreviewPlayer: React.FC = () => {
       });
     });
 
-    // Layer Composite Sorting: Background Video/Image first, Text & Subtitles ALWAYS LAST (ON TOP)
+    // Layer Composite Priority Order
     visibleClips.sort((a, b) => {
       const typePriority: Record<string, number> = { audio: 0, video: 1, image: 2, text: 3 };
       const priorityA = typePriority[a.type] ?? 1;
@@ -189,35 +196,25 @@ export const PreviewPlayer: React.FC = () => {
       return trackAIdx - trackBIdx;
     });
 
-    activeVideoElementsRef.current.forEach((videoEl, clipId) => {
-      const isActive = visibleClips.some((c) => c.id === clipId);
-      if (!isActive || !isPlaying) {
-        if (!videoEl.paused) videoEl.pause();
-      }
-    });
-
-    visibleClips.forEach((clip) => {
-      const parentTrack = tracks.find((t) => t.id === clip.trackId);
-      const isMuted = parentTrack?.muted || clip.audio.muted;
-
+    const drawSingleClip = (clip: Clip) => {
       const relTime = currentTime - clip.startTime;
       const currentTransform = getInterpolatedTransform(clip, relTime);
 
       ctx.save();
 
-      // Masking Path (Circle, Rectangle, Split, Pen Tool)
+      // Masking Path
       if (clip.mask && clip.mask.type !== 'none') {
         ctx.beginPath();
         if (clip.mask.type === 'circle') {
-          ctx.arc(width / 2, height / 2, Math.min(width, height) / 3, 0, Math.PI * 2);
+          ctx.arc(targetWidth / 2, targetHeight / 2, Math.min(targetWidth, targetHeight) / 3, 0, Math.PI * 2);
         } else if (clip.mask.type === 'rectangle') {
-          ctx.rect(width * 0.15, height * 0.15, width * 0.7, height * 0.7);
+          ctx.rect(targetWidth * 0.15, targetHeight * 0.15, targetWidth * 0.7, targetHeight * 0.7);
         } else if (clip.mask.type === 'splitLeft') {
-          ctx.rect(0, 0, width / 2, height);
+          ctx.rect(0, 0, targetWidth / 2, targetHeight);
         } else if (clip.mask.type === 'pen' && clip.mask.points && clip.mask.points.length > 0) {
           clip.mask.points.forEach((pt, i) => {
-            const px = width / 2 + (pt.x / 100) * width;
-            const py = height / 2 + (pt.y / 100) * height;
+            const px = targetWidth / 2 + (pt.x / 100) * targetWidth;
+            const py = targetHeight / 2 + (pt.y / 100) * targetHeight;
             if (i === 0) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
           });
@@ -227,111 +224,73 @@ export const PreviewPlayer: React.FC = () => {
       }
 
       // Center transform
-      const centerX = width / 2 + (currentTransform.x / 100) * width;
-      const centerY = height / 2 + (currentTransform.y / 100) * height;
+      const centerX = targetWidth / 2 + (currentTransform.x / 100) * targetWidth;
+      const centerY = targetHeight / 2 + (currentTransform.y / 100) * targetHeight;
       ctx.translate(centerX, centerY);
       ctx.rotate((currentTransform.rotation * Math.PI) / 180);
       ctx.scale(currentTransform.scale, currentTransform.scale);
+      ctx.globalAlpha = Math.max(0, Math.min(1, currentTransform.opacity));
 
-      // Transitions Opacity blending
-      let opacity = currentTransform.opacity;
-      if (clip.transition && clip.transition.type !== 'none') {
-        const transDur = clip.transition.duration || 0.5;
-        if (relTime < transDur) {
-          opacity *= relTime / transDur;
-        }
-      }
-      ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
-
+      // Filter
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
 
-      // IMAGE CLIP RENDERING
+      // Render Image Clip with Aspect Ratio Preservation
       if (clip.type === 'image' && clip.src) {
-        let imgEl = activeImageElementsRef.current.get(clip.id);
-        if (!imgEl) {
-          imgEl = new Image();
-          imgEl.src = clip.src;
-          imgEl.crossOrigin = 'anonymous';
-          activeImageElementsRef.current.set(clip.id, imgEl);
+        let img = activeImageElementsRef.current.get(clip.id);
+        if (!img) {
+          img = new Image();
+          img.src = clip.src;
+          img.crossOrigin = 'anonymous';
+          activeImageElementsRef.current.set(clip.id, img);
         }
-
-        if (imgEl.complete && imgEl.naturalWidth > 0) {
-          try {
-            ctx.drawImage(imgEl, -width / 2, -height / 2, width, height);
-
-            // Chroma Key (Green Screen Removal on Images)
-            if (clip.chromaKey?.enabled) {
-              const frameData = ctx.getImageData(0, 0, width, height);
-              const data = frameData.data;
-              const threshold = (clip.chromaKey.threshold / 100) * 255;
-
-              for (let i = 0; i < data.length; i += 4) {
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-
-                if (g > 100 && g > r + threshold / 2 && g > b + threshold / 2) {
-                  data[i + 3] = 0;
-                }
-              }
-              ctx.putImageData(frameData, 0, 0);
-            }
-          } catch (e) {}
-        }
-      } else if ((clip.type === 'video' || clip.type === 'audio') && clip.src) {
-        let videoEl = activeVideoElementsRef.current.get(clip.id);
-        if (!videoEl) {
-          videoEl = document.createElement('video');
-          videoEl.src = clip.src;
-          videoEl.crossOrigin = 'anonymous';
-          activeVideoElementsRef.current.set(clip.id, videoEl);
-        }
-
-        videoEl.muted = isMuted;
-        videoEl.volume = Math.max(0, Math.min(1, clip.audio.volume));
-
-        const mediaTime = relTime * clip.speed + clip.mediaOffset;
-        if (Math.abs(videoEl.currentTime - mediaTime) > 0.15) {
-          videoEl.currentTime = mediaTime;
-        }
-
-        if (isPlaying) {
-          if (videoEl.paused) {
-            videoEl.play().catch(() => {});
+        if (img.complete) {
+          const aspect = (img.naturalWidth || targetWidth) / (img.naturalHeight || targetHeight);
+          let drawW = targetWidth;
+          let drawH = targetWidth / aspect;
+          if (drawH < targetHeight) {
+            drawH = targetHeight;
+            drawW = targetHeight * aspect;
           }
-        } else {
-          if (!videoEl.paused) {
-            videoEl.pause();
-          }
+          ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+        }
+      }
+      // Render Video Clip with Aspect Ratio Preservation & getSourceTimeForTimelineTime
+      else if (clip.type === 'video' && clip.src) {
+        let video = activeVideoElementsRef.current.get(clip.id);
+        if (!video) {
+          video = document.createElement('video');
+          video.src = clip.src;
+          video.crossOrigin = 'anonymous';
+          video.muted = true;
+          video.playsInline = true;
+          activeVideoElementsRef.current.set(clip.id, video);
         }
 
-        if (clip.type === 'video') {
-          try {
-            ctx.drawImage(videoEl, -width / 2, -height / 2, width, height);
-
-            // Chroma Key (Green Screen Removal)
-            if (clip.chromaKey?.enabled) {
-              const frameData = ctx.getImageData(0, 0, width, height);
-              const data = frameData.data;
-              const threshold = (clip.chromaKey.threshold / 100) * 255;
-
-              for (let i = 0; i < data.length; i += 4) {
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-
-                if (g > 100 && g > r + threshold / 2 && g > b + threshold / 2) {
-                  data[i + 3] = 0;
-                }
-              }
-              ctx.putImageData(frameData, 0, 0);
-            }
-          } catch (e) {}
+        const mediaTime = getSourceTimeForTimelineTime(clip, currentTime);
+        if (Math.abs(video.currentTime - mediaTime) > 0.05) {
+          video.currentTime = mediaTime;
         }
-      } else if (clip.type === 'text' && clip.text) {
+
+        if (isPlaying && video.paused) {
+          video.play().catch(() => {});
+        } else if (!isPlaying && !video.paused) {
+          video.pause();
+        }
+
+        const aspect = (video.videoWidth || targetWidth) / (video.videoHeight || targetHeight);
+        let drawW = targetWidth;
+        let drawH = targetWidth / aspect;
+        if (drawH < targetHeight) {
+          drawH = targetHeight;
+          drawW = targetHeight * aspect;
+        }
+        ctx.drawImage(video, -drawW / 2, -drawH / 2, drawW, drawH);
+      }
+      // Render Text Clip
+      else if (clip.type === 'text' && clip.text) {
         const text = clip.text;
-        ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 1.5}px ${text.fontFamily}`;
+        ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 2}px ${text.fontFamily}`;
         ctx.textAlign = text.alignment;
         ctx.textBaseline = 'middle';
 
@@ -357,19 +316,72 @@ export const PreviewPlayer: React.FC = () => {
         ctx.fillText(text.content, 0, 0);
       }
 
-      // Selection bounding box
-      if (clip.id === selectedClipId) {
-        ctx.strokeStyle = '#00f2fe';
-        ctx.lineWidth = 4;
-        ctx.setLineDash([8, 8]);
-        ctx.strokeRect(-width / 2, -height / 2, width, height);
+      ctx.restore();
+    };
+
+    // Render Clips / Transitions
+    visibleClips.forEach((clip) => {
+      const relTime = currentTime - clip.startTime;
+      const hasTransition = clip.transition && clip.transition.type !== 'none';
+
+      if (hasTransition && relTime < (clip.transition?.duration || 0.5)) {
+        const transDur = clip.transition?.duration || 0.5;
+        const progress = relTime / transDur;
+
+        renderTransitionEffect(
+          clip.transition!.type,
+          progress,
+          ctx,
+          targetWidth,
+          targetHeight,
+          () => {},
+          () => drawSingleClip(clip)
+        );
+      } else {
+        drawSingleClip(clip);
       }
+    });
+
+    // Draw Selected Clip Bounding Box
+    if (selectedClip) {
+      const relTime = currentTime - selectedClip.startTime;
+      const currentTransform = getInterpolatedTransform(selectedClip, relTime);
+      const centerX = targetWidth / 2 + (currentTransform.x / 100) * targetWidth;
+      const centerY = targetHeight / 2 + (currentTransform.y / 100) * targetHeight;
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate((currentTransform.rotation * Math.PI) / 180);
+      ctx.scale(currentTransform.scale, currentTransform.scale);
+
+      ctx.strokeStyle = '#00f2fe';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 8]);
+      ctx.strokeRect(-targetWidth / 2, -targetHeight / 2, targetWidth, targetHeight);
+
+      // Handle Corner Nodes
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#00f2fe';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+      [
+        [-targetWidth / 2, -targetHeight / 2],
+        [targetWidth / 2, -targetHeight / 2],
+        [-targetWidth / 2, targetHeight / 2],
+        [targetWidth / 2, targetHeight / 2],
+      ].forEach(([x, y]) => {
+        ctx.beginPath();
+        ctx.arc(x, y, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
 
       ctx.restore();
-    });
-  }, [currentTime, aspectRatio, tracks, selectedClipId, isPlaying]);
+    }
+  }, [currentTime, isPlaying, aspectRatio, tracks, selectedClip, containerSize]);
 
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  // Interactive Direct Dragging on Canvas
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
     if (!selectedClip) return;
     setIsDraggingCanvas(true);
     setDragStart({
@@ -380,15 +392,15 @@ export const PreviewPlayer: React.FC = () => {
     });
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
     if (!isDraggingCanvas || !dragStart || !selectedClip || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const deltaX = ((e.clientX - dragStart.x) / rect.width) * 100;
     const deltaY = ((e.clientY - dragStart.y) / rect.height) * 100;
 
     updateClipTransform(selectedClip.id, {
-      x: Math.round(dragStart.initialX + deltaX),
-      y: Math.round(dragStart.initialY + deltaY),
+      x: dragStart.initialX + deltaX,
+      y: dragStart.initialY + deltaY,
     });
   };
 
@@ -404,74 +416,62 @@ export const PreviewPlayer: React.FC = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
   };
 
-  const handleStepFrame = (frames: number) => {
-    const frameTime = 1 / 30;
-    setCurrentTime(currentTime + frames * frameTime);
-  };
-
-  const displayDuration = getProjectDuration();
+  const totalDuration = getProjectDuration();
 
   return (
-    <main className="flex-1 flex flex-col bg-dark-900 overflow-hidden relative select-none min-h-0 min-w-0">
-      {/* Canvas Viewport Container */}
-      <div ref={containerRef} className="flex-1 flex items-center justify-center p-2 relative overflow-hidden bg-black/40 min-h-0 min-w-0">
-        <div className="relative shadow-2xl rounded-lg overflow-hidden border border-dark-700/60 max-w-full max-h-full flex items-center justify-center">
-          <canvas
-            ref={canvasRef}
-            onMouseDown={handleCanvasMouseDown}
-            onMouseMove={handleCanvasMouseMove}
-            onMouseUp={handleCanvasMouseUp}
-            className={`max-h-full max-w-full object-contain rounded bg-black ${
-              selectedClip ? 'cursor-move' : 'cursor-default'
-            }`}
-            style={{
-              maxHeight: `${Math.max(160, containerSize.height - 10)}px`,
-              maxWidth: `${Math.max(200, containerSize.width - 10)}px`,
-            }}
-          />
-        </div>
+    <div
+      ref={containerRef}
+      className="flex-1 bg-dark-950 flex flex-col items-center justify-center p-4 relative select-none overflow-hidden"
+    >
+      {/* Player Canvas Area */}
+      <div
+        className="flex-1 flex items-center justify-center relative w-full h-full"
+        onMouseDown={handleCanvasMouseDown}
+        onMouseMove={handleCanvasMouseMove}
+        onMouseUp={handleCanvasMouseUp}
+        onMouseLeave={handleCanvasMouseUp}
+      >
+        <canvas
+          ref={canvasRef}
+          className="rounded-xl shadow-2xl border border-dark-700 bg-dark-900 cursor-move transition-transform"
+        />
       </div>
 
-      {/* Playback Control Bar */}
-      <div className="h-10 md:h-12 bg-dark-800 border-t border-dark-700 px-3 sm:px-6 flex items-center justify-between z-10 shrink-0">
-        {/* Timecode Display */}
-        <div className="font-mono text-[11px] md:text-xs text-cyan-400 font-bold bg-dark-900/80 px-2 py-1 md:px-3 md:py-1.5 rounded-md border border-dark-700">
-          {formatTimecode(currentTime)}{' '}
-          <span className="text-gray-500 font-normal hidden sm:inline">/ {formatTimecode(displayDuration)}</span>
-        </div>
+      {/* Floating Transport Bar */}
+      <div className="absolute bottom-6 bg-dark-800/90 backdrop-blur-md border border-dark-700 rounded-2xl px-5 py-2.5 flex items-center space-x-6 shadow-2xl z-20">
+        <button
+          onClick={() => setCurrentTime(0)}
+          className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-lg transition"
+          title="Jump to Start"
+        >
+          <SkipBack className="w-4 h-4" />
+        </button>
 
-        {/* Playback Controls */}
-        <div className="flex items-center space-x-2 md:space-x-3">
-          <button
-            onClick={() => handleStepFrame(-1)}
-            title="Step 1 Frame Backward"
-            className="p-1 md:p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
-          >
-            <SkipBack className="w-3.5 h-3.5 md:w-4 md:h-4" />
-          </button>
+        <button
+          onClick={() => setIsPlaying(!isPlaying)}
+          className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 flex items-center justify-center text-white shadow-lg shadow-cyan-500/20 transition transform active:scale-95"
+          title={isPlaying ? 'Pause' : 'Play'}
+        >
+          {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+        </button>
 
-          <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            className="w-7 h-7 md:w-9 md:h-9 flex items-center justify-center rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-md shadow-cyan-500/20 transition active:scale-95"
-          >
-            {isPlaying ? <Pause className="w-3.5 h-3.5 md:w-4 md:h-4" /> : <Play className="w-3.5 h-3.5 md:w-4 md:h-4 ml-0.5" />}
-          </button>
+        <button
+          onClick={() => setCurrentTime(totalDuration)}
+          className="p-1.5 text-gray-400 hover:text-cyan-400 rounded-lg transition"
+          title="Jump to End"
+        >
+          <SkipForward className="w-4 h-4" />
+        </button>
 
-          <button
-            onClick={() => handleStepFrame(1)}
-            title="Step 1 Frame Forward"
-            className="p-1 md:p-1.5 text-gray-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
-          >
-            <SkipForward className="w-3.5 h-3.5 md:w-4 md:h-4" />
-          </button>
-        </div>
+        <div className="h-4 w-[1px] bg-dark-700" />
 
-        <div className="flex items-center space-x-2">
-          <span className="text-[10px] md:text-[11px] font-semibold text-gray-400 bg-dark-700/50 px-1.5 py-0.5 md:px-2 md:py-1 rounded">
-            30 FPS
-          </span>
+        {/* Timecode Badge */}
+        <div className="font-mono text-xs text-gray-300">
+          <span className="text-cyan-400 font-bold">{formatTimecode(currentTime)}</span>
+          <span className="text-gray-500 mx-1">/</span>
+          <span>{formatTimecode(totalDuration)}</span>
         </div>
       </div>
-    </main>
+    </div>
   );
 };

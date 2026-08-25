@@ -1,5 +1,11 @@
 import { TransitionType } from '../types/timeline';
 
+// Deterministic pseudo-random seed function (replaces Math.random() for frame-accurate export)
+function pseudoRandom(seed: number): number {
+  const x = Math.sin(seed * 91.3458 + 47.1234) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 export function renderTransitionEffect(
   type: TransitionType,
   progress: number, // 0.0 -> 1.0
@@ -7,12 +13,13 @@ export function renderTransitionEffect(
   width: number,
   height: number,
   drawOutgoing: () => void,
-  drawIncoming: () => void
+  drawIncoming: () => void,
+  frameSeed = 0
 ) {
   const p = Math.max(0, Math.min(1, progress));
 
   if (type === 'fade' || type === 'dissolve') {
-    // Crossfade: outgoing fades out, incoming fades in
+    // Crossfade: Outgoing clip A fades out, Incoming clip B fades in
     ctx.save();
     ctx.globalAlpha = 1 - p;
     drawOutgoing();
@@ -23,7 +30,7 @@ export function renderTransitionEffect(
     drawIncoming();
     ctx.restore();
   } else if (type === 'slide') {
-    // Slide Left: incoming slides in from right
+    // Slide Left: Incoming clip B slides in from right to left over clip A
     ctx.save();
     drawOutgoing();
     ctx.restore();
@@ -73,14 +80,14 @@ export function renderTransitionEffect(
     }
     ctx.restore();
   } else if (type === 'glitch') {
-    // Glitch Shift
+    // Deterministic Glitch Shift using frameSeed (no Math.random())
     ctx.save();
+    const rnd = pseudoRandom(frameSeed + p * 100);
+    const offsetX = (rnd - 0.5) * 60;
     if (p < 0.5) {
-      const offsetX = (Math.random() - 0.5) * 40;
       ctx.translate(offsetX, 0);
       drawOutgoing();
     } else {
-      const offsetX = (Math.random() - 0.5) * 40;
       ctx.translate(offsetX, 0);
       drawIncoming();
     }
@@ -107,7 +114,12 @@ export function renderTransitionEffect(
     else drawIncoming();
     ctx.restore();
   } else {
-    // Default fallback
+    // Fallback crossfade
+    ctx.save();
+    ctx.globalAlpha = 1 - p;
+    drawOutgoing();
+    ctx.restore();
+
     ctx.save();
     ctx.globalAlpha = p;
     drawIncoming();
