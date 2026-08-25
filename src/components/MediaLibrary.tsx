@@ -12,10 +12,12 @@ import {
   ArrowRightLeft,
   Upload,
   Eye,
+  FileText,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { MediaType, TransitionType, MediaAsset } from '../types/timeline';
 import { SourceMonitor } from './SourceMonitor';
+import { parseSRT } from '../utils/srtParser';
 
 const PRESET_TRANSITIONS = [
   { name: '🌅 Cross Dissolve / Fade', type: 'fade', duration: 0.8 },
@@ -124,6 +126,44 @@ export const MediaLibrary: React.FC = () => {
       setSelectedClipId(clipId);
     });
 
+    e.target.value = '';
+  };
+
+  const handleSRTUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const srtText = event.target?.result as string;
+      if (srtText) {
+        const parsedSubs = parseSRT(srtText);
+        let textTrack = tracks.find((t) => t.type === 'text');
+        let textTrackId = textTrack?.id || addTrack('text', 'Subtitle Track');
+
+        parsedSubs.forEach((sub) => {
+          addClipToTrack(textTrackId, {
+            name: sub.text.slice(0, 20),
+            type: 'text',
+            startTime: sub.startTime,
+            duration: sub.endTime - sub.startTime,
+            text: {
+              content: sub.text,
+              fontFamily: 'Inter, sans-serif',
+              fontSize: 32,
+              color: '#ffffff',
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              borderColor: '#000000',
+              borderWidth: 0,
+              alignment: 'center',
+              bold: true,
+              italic: false,
+            },
+          });
+        });
+      }
+    };
+    reader.readAsText(file);
     e.target.value = '';
   };
 
@@ -318,6 +358,7 @@ export const MediaLibrary: React.FC = () => {
         {/* TEXT TAB */}
         {activeTab === 'text' && (
           <div className="space-y-4">
+            {/* Custom Text Area */}
             <div className="p-3 bg-dark-900/80 border border-cyan-500/40 rounded-xl space-y-2">
               <label className="block text-xs font-bold text-cyan-300 uppercase tracking-wider">
                 Add Preferred Custom Text
@@ -337,6 +378,19 @@ export const MediaLibrary: React.FC = () => {
                 <span>Add Custom Text to Timeline</span>
               </button>
             </div>
+
+            {/* Import .SRT Subtitles */}
+            <label className="flex flex-col items-center justify-center border-2 border-dashed border-purple-500/40 hover:border-purple-400 rounded-xl p-4 cursor-pointer bg-purple-900/10 hover:bg-purple-900/20 transition group">
+              <FileText className="w-6 h-6 text-purple-400 mb-1 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-bold text-purple-300">Import .SRT Subtitles File</span>
+              <span className="text-[10px] text-gray-400 mt-0.5">Parse subtitles to timeline clips</span>
+              <input
+                type="file"
+                accept=".srt"
+                onChange={handleSRTUpload}
+                className="hidden"
+              />
+            </label>
           </div>
         )}
 

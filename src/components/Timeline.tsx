@@ -24,12 +24,14 @@ import {
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track, MediaType } from '../types/timeline';
+import { extractAudioPeaks } from '../utils/audioWaveform';
 
 export const Timeline: React.FC = () => {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const [draggingClip, setDraggingClip] = useState<{ id: string; startX: number; originalStart: number } | null>(null);
   const [trimmingClip, setTrimmingClip] = useState<{ id: string; edge: 'left' | 'right'; startX: number; originalStart: number; originalDuration: number } | null>(null);
   const [isScrubbingPlayhead, setIsScrubbingPlayhead] = useState(false);
+  const [clipWaveforms, setClipWaveforms] = useState<Record<string, number[]>>({});
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
@@ -56,6 +58,19 @@ export const Timeline: React.FC = () => {
     deleteSelectedClip,
     detachAudioFromSelectedClip,
   } = useTimelineStore();
+
+  // Extract PCM Waveforms for Audio / Video Clips
+  useEffect(() => {
+    tracks.forEach((track) => {
+      track.clips.forEach((clip) => {
+        if ((clip.type === 'audio' || clip.type === 'video') && clip.src && !clipWaveforms[clip.id]) {
+          extractAudioPeaks(clip.src, 60).then((peaks) => {
+            setClipWaveforms((prev) => ({ ...prev, [clip.id]: peaks }));
+          });
+        }
+      });
+    });
+  }, [tracks]);
 
   // Close context menu on outside click
   useEffect(() => {
@@ -368,6 +383,7 @@ export const Timeline: React.FC = () => {
                   const clipWidth = clip.duration * zoomLevel;
                   const isSelected = clip.id === selectedClipId;
                   const hasTransition = clip.transition && clip.transition.type !== 'none';
+                  const peaks = clipWaveforms[clip.id];
 
                   return (
                     <div
@@ -378,7 +394,7 @@ export const Timeline: React.FC = () => {
                         left: `${clipLeft}px`,
                         width: `${clipWidth}px`,
                       }}
-                      className={`absolute top-1.5 bottom-1.5 rounded-lg p-2 cursor-grab active:cursor-grabbing border flex items-center justify-between overflow-hidden shadow-sm transition-shadow ${
+                      className={`absolute top-1.5 bottom-1.5 rounded-lg p-2 cursor-grab active:cursor-grabbing border flex items-center justify-between overflow-hidden shadow-sm transition-shadow relative ${
                         isSelected
                           ? 'bg-gradient-to-r from-cyan-900/80 to-blue-900/80 border-cyan-400 ring-2 ring-cyan-500/40'
                           : clip.type === 'video'
@@ -388,38 +404,51 @@ export const Timeline: React.FC = () => {
                           : 'bg-purple-950/60 border-purple-700/60 hover:border-purple-500'
                       }`}
                     >
+                      {/* Real Web Audio API Waveform Overlay */}
+                      {peaks && (clip.type === 'audio' || clip.type === 'video') && (
+                        <div className="absolute inset-x-2 bottom-1 top-5 flex items-end justify-between opacity-30 pointer-events-none">
+                          {peaks.map((val, idx) => (
+                            <div
+                              key={idx}
+                              className="w-0.5 bg-emerald-300 rounded-t"
+                              style={{ height: `${val * 100}%` }}
+                            />
+                          ))}
+                        </div>
+                      )}
+
                       {/* Left Edge Drag Handle (Shorten / Trim Start) */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
-                        className={`absolute left-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-l transition-all ${
+                        className={`absolute left-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-l transition-all z-10 ${
                           isSelected ? 'bg-cyan-400' : 'bg-white/30 hover:bg-cyan-400'
                         }`}
                         title="Drag to trim start duration"
                       />
 
                       {/* Clip Label */}
-                      <div className="flex items-center space-x-1.5 ml-2.5 truncate">
+                      <div className="flex items-center space-x-1.5 ml-2.5 truncate z-10">
                         {getTrackIcon(clip.type)}
                         <span className="text-[11px] font-bold text-white truncate">{clip.name}</span>
                       </div>
 
                       {/* Visual Transition Badge on Timeline */}
                       {hasTransition && (
-                        <div className="flex items-center space-x-1 px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white rounded text-[9px] font-extrabold shadow animate-pulse">
+                        <div className="flex items-center space-x-1 px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white rounded text-[9px] font-extrabold shadow animate-pulse z-10">
                           <ArrowRightLeft className="w-3 h-3" />
                           <span className="uppercase">{clip.transition?.type}</span>
                         </div>
                       )}
 
                       {/* Duration Badge */}
-                      <span className="text-[10px] font-mono text-gray-300 mr-2.5 bg-black/40 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-gray-300 mr-2.5 bg-black/40 px-1.5 py-0.5 rounded z-10">
                         {clip.duration.toFixed(1)}s
                       </span>
 
                       {/* Right Edge Drag Handle (Shorten / Trim End) */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'right')}
-                        className={`absolute right-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-r transition-all ${
+                        className={`absolute right-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-r transition-all z-10 ${
                           isSelected ? 'bg-cyan-400' : 'bg-white/30 hover:bg-cyan-400'
                         }`}
                         title="Drag to trim end duration"

@@ -15,6 +15,7 @@ import {
   SpeedCurveType,
   Keyframe,
 } from '../types/timeline';
+import { saveProjectStateToIndexedDB, loadProjectStateFromIndexedDB } from '../utils/projectPersistence';
 
 const DEFAULT_TRANSFORM: TransformProps = {
   x: 0,
@@ -53,6 +54,7 @@ const DEFAULT_MASK: MaskProps = {
 };
 
 export type LayoutMode = 'auto' | 'mobile' | 'desktop';
+export type SaveStatus = 'Saved' | 'Saving...' | 'Unsaved changes';
 
 interface TimelineState {
   // Playback
@@ -64,6 +66,7 @@ interface TimelineState {
   zoomLevel: number;
   snappingEnabled: boolean;
   rippleDeleteEnabled: boolean;
+  saveStatus: SaveStatus;
 
   // Responsive Layout Panel State
   layoutMode: LayoutMode;
@@ -85,6 +88,10 @@ interface TimelineState {
   // Helpers
   getProjectDuration: () => number;
 
+  // Persistence Actions
+  saveProjectToDB: () => Promise<void>;
+  restoreProjectFromDB: () => Promise<void>;
+
   // Layout Actions
   setLayoutMode: (mode: LayoutMode) => void;
   toggleLeftPanel: () => void;
@@ -101,9 +108,9 @@ interface TimelineState {
   setSnappingEnabled: (enabled: boolean) => void;
   setRippleDeleteEnabled: (enabled: boolean) => void;
 
-  // Media Asset Actions
+  // Asset Actions
   addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>) => string;
-  deleteMediaAsset: (assetId: string) => void;
+  deleteMediaAsset: (id: string) => void;
 
   // Track Actions
   addTrack: (type: MediaType, name?: string) => string;
@@ -112,8 +119,8 @@ interface TimelineState {
   toggleTrackHidden: (trackId: string) => void;
   toggleTrackLocked: (trackId: string) => void;
 
-  // Clip Actions
-  addClipToTrack: (trackId: string, clipData: Partial<Clip>) => string;
+  // Clip Editing Actions
+  addClipToTrack: (trackId: string, clip: Partial<Clip>) => string;
   updateClip: (clipId: string, updates: Partial<Clip>) => void;
   updateClipTransform: (clipId: string, transform: Partial<TransformProps>) => void;
   updateClipFilter: (clipId: string, filter: Partial<FilterProps>) => void;
@@ -123,28 +130,27 @@ interface TimelineState {
   updateClipChromaKey: (clipId: string, chromaKey: Partial<ChromaKeyProps>) => void;
   updateClipMask: (clipId: string, mask: Partial<MaskProps>) => void;
   updateClipSpeedCurve: (clipId: string, curve: SpeedCurveType) => void;
-
-  // Keyframes Actions
   addKeyframeToClip: (clipId: string) => void;
   removeKeyframeFromClip: (clipId: string, keyframeId: string) => void;
 
+  // Advanced Operations
   splitSelectedClip: () => void;
-  deleteSelectedClip: () => void;
   duplicateSelectedClip: () => void;
+  deleteSelectedClip: () => void;
   detachAudioFromSelectedClip: () => void;
-
-  // Clipboard
   copySelectedClip: () => void;
   pasteClipAtPlayhead: () => void;
 
-  // Undo / Redo
+  // History Actions
   pushHistory: () => void;
   undo: () => void;
   redo: () => void;
 
-  // Demo Project
+  // Demo Project Initializer
   loadDemoProject: () => void;
 }
+
+let saveDebounceTimer: any = null;
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
   isPlaying: false,
@@ -155,53 +161,90 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   zoomLevel: 40,
   snappingEnabled: true,
   rippleDeleteEnabled: false,
+  saveStatus: 'Saved',
 
   layoutMode: 'auto',
   isLeftPanelOpen: true,
   isRightPanelOpen: true,
 
-  mediaAssets: [
+  mediaAssets: [],
+  tracks: [
     {
-      id: 'asset-sample-1',
-      name: 'Big Buck Bunny',
+      id: 'track-video-1',
+      name: 'Video Track 1',
       type: 'video',
-      src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-      duration: 10,
-      size: '15 MB',
-      createdAt: Date.now(),
+      muted: false,
+      locked: false,
+      hidden: false,
+      clips: [],
     },
     {
-      id: 'asset-sample-2',
-      name: 'Elephants Dream',
-      type: 'video',
-      src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-      duration: 10,
-      size: '18 MB',
-      createdAt: Date.now(),
+      id: 'track-text-1',
+      name: 'Text Track 1',
+      type: 'text',
+      muted: false,
+      locked: false,
+      hidden: false,
+      clips: [],
+    },
+    {
+      id: 'track-audio-1',
+      name: 'Audio Track 1',
+      type: 'audio',
+      muted: false,
+      locked: false,
+      hidden: false,
+      clips: [],
     },
   ],
 
-  tracks: [
-    { id: 'track-text-1', name: 'Text Track 1', type: 'text', muted: false, locked: false, hidden: false, clips: [] },
-    { id: 'track-video-1', name: 'Video Track 1', type: 'video', muted: false, locked: false, hidden: false, clips: [] },
-    { id: 'track-audio-1', name: 'Audio Track 1', type: 'audio', muted: false, locked: false, hidden: false, clips: [] },
-  ],
   selectedClipId: null,
   copiedClip: null,
-
   history: [],
   historyIndex: -1,
 
   getProjectDuration: () => {
     const { tracks } = get();
-    let maxEnd = 0;
+    let maxEnd = 10;
     tracks.forEach((track) => {
       track.clips.forEach((clip) => {
-        const end = clip.startTime + clip.duration;
-        if (end > maxEnd) maxEnd = end;
+        const clipEnd = clip.startTime + clip.duration;
+        if (clipEnd > maxEnd) maxEnd = clipEnd;
       });
     });
-    return maxEnd > 0 ? maxEnd : 10;
+    return Math.ceil(maxEnd);
+  },
+
+  saveProjectToDB: async () => {
+    set({ saveStatus: 'Saving...' });
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+
+    saveDebounceTimer = setTimeout(async () => {
+      const state = get();
+      const projectData = {
+        aspectRatio: state.aspectRatio,
+        zoomLevel: state.zoomLevel,
+        maxTimelineDuration: state.maxTimelineDuration,
+        tracks: state.tracks,
+        mediaAssets: state.mediaAssets,
+      };
+      await saveProjectStateToIndexedDB(projectData);
+      set({ saveStatus: 'Saved' });
+    }, 500);
+  },
+
+  restoreProjectFromDB: async () => {
+    const data = await loadProjectStateFromIndexedDB();
+    if (data && data.tracks) {
+      set({
+        aspectRatio: data.aspectRatio || '16:9',
+        zoomLevel: data.zoomLevel || 40,
+        maxTimelineDuration: data.maxTimelineDuration || 60,
+        tracks: data.tracks || [],
+        mediaAssets: data.mediaAssets || [],
+        saveStatus: 'Saved',
+      });
+    }
   },
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
@@ -213,375 +256,298 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
   setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(200, zoom)) }),
-  setAspectRatio: (ratio) => set({ aspectRatio: ratio }),
+  setAspectRatio: (ratio) => {
+    set({ aspectRatio: ratio });
+    get().saveProjectToDB();
+  },
   setSelectedClipId: (id) => set({ selectedClipId: id }),
   setSnappingEnabled: (enabled) => set({ snappingEnabled: enabled }),
   setRippleDeleteEnabled: (enabled) => set({ rippleDeleteEnabled: enabled }),
 
-  addMediaAsset: (assetData) => {
+  addMediaAsset: (asset) => {
     const id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newAsset: MediaAsset = {
-      ...assetData,
+      ...asset,
       id,
       createdAt: Date.now(),
     };
-    set((state) => ({ mediaAssets: [newAsset, ...state.mediaAssets] }));
+    set((state) => ({ mediaAssets: [...state.mediaAssets, newAsset] }));
+    get().saveProjectToDB();
     return id;
   },
 
-  deleteMediaAsset: (assetId) => {
+  deleteMediaAsset: (id) => {
     set((state) => ({
-      mediaAssets: state.mediaAssets.filter((a) => a.id !== assetId),
+      mediaAssets: state.mediaAssets.filter((a) => a.id !== id),
     }));
-  },
-
-  pushHistory: () => {
-    const { tracks, history, historyIndex } = get();
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(JSON.parse(JSON.stringify(tracks)));
-    set({
-      history: newHistory,
-      historyIndex: newHistory.length - 1,
-    });
-  },
-
-  undo: () => {
-    const { history, historyIndex } = get();
-    if (historyIndex > 0) {
-      const prevTracks = history[historyIndex - 1];
-      set({
-        tracks: JSON.parse(JSON.stringify(prevTracks)),
-        historyIndex: historyIndex - 1,
-      });
-    }
-  },
-
-  redo: () => {
-    const { history, historyIndex } = get();
-    if (historyIndex < history.length - 1) {
-      const nextTracks = history[historyIndex + 1];
-      set({
-        tracks: JSON.parse(JSON.stringify(nextTracks)),
-        historyIndex: historyIndex + 1,
-      });
-    }
+    get().saveProjectToDB();
   },
 
   addTrack: (type, name) => {
     get().pushHistory();
-    const count = get().tracks.filter((t) => t.type === type).length + 1;
+    const id = `track-${type}-${Date.now()}`;
+    const trackName = name || `${type.charAt(0).toUpperCase() + type.slice(1)} Track ${get().tracks.length + 1}`;
     const newTrack: Track = {
-      id: `track-${type}-${Date.now()}`,
-      name: name || `${type.charAt(0).toUpperCase() + type.slice(1)} Track ${count}`,
+      id,
+      name: trackName,
       type,
       muted: false,
       locked: false,
       hidden: false,
       clips: [],
     };
-    set((state) => ({ tracks: [newTrack, ...state.tracks] }));
-    return newTrack.id;
+    set((state) => ({ tracks: [...state.tracks, newTrack] }));
+    get().saveProjectToDB();
+    return id;
   },
 
   deleteTrack: (trackId) => {
     get().pushHistory();
     set((state) => ({
       tracks: state.tracks.filter((t) => t.id !== trackId),
-      selectedClipId: state.selectedClipId && state.tracks.find((t) => t.id === trackId)?.clips.some((c) => c.id === state.selectedClipId)
-        ? null
-        : state.selectedClipId,
     }));
+    get().saveProjectToDB();
   },
 
   toggleTrackMute: (trackId) => {
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, muted: !t.muted } : t)),
     }));
+    get().saveProjectToDB();
   },
 
   toggleTrackHidden: (trackId) => {
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, hidden: !t.hidden } : t)),
     }));
+    get().saveProjectToDB();
   },
 
   toggleTrackLocked: (trackId) => {
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, locked: !t.locked } : t)),
     }));
+    get().saveProjectToDB();
   },
 
   addClipToTrack: (trackId, clipData) => {
     get().pushHistory();
-    const clipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const id = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newClip: Clip = {
-      id: clipId,
+      id,
       trackId,
       name: clipData.name || 'Untitled Clip',
       type: clipData.type || 'video',
       startTime: clipData.startTime ?? get().currentTime,
-      duration: clipData.duration || 5,
-      mediaOffset: clipData.mediaOffset || 0,
-      sourceDuration: clipData.sourceDuration || 5,
+      duration: clipData.duration ?? 5,
+      mediaOffset: clipData.mediaOffset ?? 0,
+      sourceDuration: clipData.sourceDuration ?? 10,
       src: clipData.src || '',
-      speed: clipData.speed || 1.0,
+      speed: clipData.speed ?? 1,
       speedCurve: clipData.speedCurve || 'flat',
       transform: { ...DEFAULT_TRANSFORM, ...clipData.transform },
       filter: { ...DEFAULT_FILTER, ...clipData.filter },
       audio: { ...DEFAULT_AUDIO, ...clipData.audio },
-      chromaKey: { ...DEFAULT_CHROMA_KEY, ...clipData.chromaKey },
-      mask: { ...DEFAULT_MASK, ...clipData.mask },
-      text: clipData.text || (clipData.type === 'text' ? {
-        content: clipData.name || 'Your Preferred Text',
-        fontFamily: 'sans-serif',
-        fontSize: 48,
-        color: '#ffffff',
-        backgroundColor: 'transparent',
-        borderColor: '#000000',
-        borderWidth: 0,
-        alignment: 'center',
-        bold: true,
-        italic: false,
-      } : undefined),
-      keyframes: [],
+      text: clipData.text,
+      transition: clipData.transition || { type: 'none', duration: 0.5 },
+      chromaKey: clipData.chromaKey || DEFAULT_CHROMA_KEY,
+      mask: clipData.mask || DEFAULT_MASK,
+      keyframes: clipData.keyframes || [],
     };
 
     set((state) => ({
-      tracks: state.tracks.map((track) => {
-        if (track.id === trackId) {
-          return { ...track, clips: [...track.clips, newClip] };
-        }
-        return track;
-      }),
-      selectedClipId: clipId,
+      tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, clips: [...t.clips, newClip] } : t)),
+      selectedClipId: id,
     }));
 
-    return clipId;
+    get().saveProjectToDB();
+    return id;
   },
 
   updateClip: (clipId, updates) => {
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
+        clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, ...updates } : clip)),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
+  updateClipTransform: (clipId, transform) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
         clips: track.clips.map((clip) =>
-          clip.id === clipId ? { ...clip, ...updates } : clip
+          clip.id === clipId ? { ...clip, transform: { ...clip.transform, ...transform } } : clip
         ),
       })),
     }));
+    get().saveProjectToDB();
   },
 
-  updateClipTransform: (clipId, transformUpdates) => {
+  updateClipFilter: (clipId, filter) => {
+    get().pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId ? { ...clip, filter: { ...clip.filter, ...filter } } : clip
+        ),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
+  updateClipAudio: (clipId, audio) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId ? { ...clip, audio: { ...clip.audio, ...audio } } : clip
+        ),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
+  updateClipText: (clipId, text) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId && clip.text ? { ...clip, text: { ...clip.text, ...text } } : clip
+        ),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
+  updateClipTransition: (clipId, transition) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
           clip.id === clipId
-            ? { ...clip, transform: { ...clip.transform, ...transformUpdates } }
+            ? { ...clip, transition: { ...clip.transition, type: transition.type || 'none', duration: transition.duration || 0.5 } }
             : clip
         ),
       })),
     }));
+    get().saveProjectToDB();
   },
 
-  updateClipFilter: (clipId, filterUpdates) => {
+  updateClipChromaKey: (clipId, chromaKey) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
           clip.id === clipId
-            ? { ...clip, filter: { ...clip.filter, ...filterUpdates } }
+            ? { ...clip, chromaKey: { ...(clip.chromaKey || DEFAULT_CHROMA_KEY), ...chromaKey } }
             : clip
         ),
       })),
     }));
+    get().saveProjectToDB();
   },
 
-  updateClipAudio: (clipId, audioUpdates) => {
+  updateClipMask: (clipId, mask) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
-          clip.id === clipId
-            ? { ...clip, audio: { ...clip.audio, ...audioUpdates } }
-            : clip
+          clip.id === clipId ? { ...clip, mask: { ...(clip.mask || DEFAULT_MASK), ...mask } } : clip
         ),
       })),
     }));
-  },
-
-  updateClipText: (clipId, textUpdates) => {
-    set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.map((clip) =>
-          clip.id === clipId && clip.text
-            ? { ...clip, text: { ...clip.text, ...textUpdates } }
-            : clip
-        ),
-      })),
-    }));
-  },
-
-  updateClipTransition: (clipId, transitionUpdates) => {
-    set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.map((clip) =>
-          clip.id === clipId
-            ? {
-                ...clip,
-                transition: {
-                  type: transitionUpdates.type || 'fade',
-                  duration: transitionUpdates.duration || 0.5,
-                },
-              }
-            : clip
-        ),
-      })),
-    }));
-  },
-
-  updateClipChromaKey: (clipId, chromaUpdates) => {
-    set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.map((clip) =>
-          clip.id === clipId
-            ? { ...clip, chromaKey: { ...(clip.chromaKey || DEFAULT_CHROMA_KEY), ...chromaUpdates } }
-            : clip
-        ),
-      })),
-    }));
-  },
-
-  updateClipMask: (clipId, maskUpdates) => {
-    set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.map((clip) =>
-          clip.id === clipId
-            ? { ...clip, mask: { ...(clip.mask || DEFAULT_MASK), ...maskUpdates } }
-            : clip
-        ),
-      })),
-    }));
+    get().saveProjectToDB();
   },
 
   updateClipSpeedCurve: (clipId, curve) => {
+    get().pushHistory();
+    let speedMult = 1;
+    if (curve === 'hero') speedMult = 1.5;
+    else if (curve === 'montage') speedMult = 2;
+    else if (curve === 'bulletTime') speedMult = 0.5;
+
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
-          clip.id === clipId ? { ...clip, speedCurve: curve } : clip
+          clip.id === clipId ? { ...clip, speedCurve: curve, speed: speedMult } : clip
         ),
       })),
     }));
+    get().saveProjectToDB();
   },
 
   addKeyframeToClip: (clipId) => {
+    get().pushHistory();
     const { currentTime, tracks } = get();
-    for (const track of tracks) {
-      const clip = track.clips.find((c) => c.id === clipId);
-      if (clip) {
-        get().pushHistory();
-        const relTime = currentTime - clip.startTime;
-        const newKf: Keyframe = {
-          id: `kf-${Date.now()}`,
-          time: Math.max(0, Math.min(clip.duration, relTime)),
-          transform: { ...clip.transform },
-          filter: { ...clip.filter },
-        };
 
-        const updatedKfs = [...clip.keyframes.filter((k) => Math.abs(k.time - relTime) > 0.1), newKf].sort(
-          (a, b) => a.time - b.time
-        );
-
-        get().updateClip(clipId, { keyframes: updatedKfs });
-        break;
-      }
-    }
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => {
+          if (clip.id === clipId) {
+            const relTime = Math.max(0, currentTime - clip.startTime);
+            const kfId = `kf-${Date.now()}`;
+            const newKf: Keyframe = {
+              id: kfId,
+              time: relTime,
+              transform: { ...clip.transform },
+            };
+            return { ...clip, keyframes: [...clip.keyframes, newKf] };
+          }
+          return clip;
+        }),
+      })),
+    }));
+    get().saveProjectToDB();
   },
 
   removeKeyframeFromClip: (clipId, keyframeId) => {
-    const { tracks } = get();
-    for (const track of tracks) {
-      const clip = track.clips.find((c) => c.id === clipId);
-      if (clip) {
-        get().pushHistory();
-        const updatedKfs = clip.keyframes.filter((k) => k.id !== keyframeId);
-        get().updateClip(clipId, { keyframes: updatedKfs });
-        break;
-      }
-    }
+    get().pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId
+            ? { ...clip, keyframes: clip.keyframes.filter((k) => k.id !== keyframeId) }
+            : clip
+        ),
+      })),
+    }));
+    get().saveProjectToDB();
   },
 
   splitSelectedClip: () => {
     const { selectedClipId, currentTime, tracks } = get();
     if (!selectedClipId) return;
 
-    let targetClip: Clip | null = null;
-    let targetTrackId: string | null = null;
-
     for (const track of tracks) {
       const clip = track.clips.find((c) => c.id === selectedClipId);
-      if (clip) {
-        targetClip = clip;
-        targetTrackId = track.id;
+      if (clip && currentTime > clip.startTime && currentTime < clip.startTime + clip.duration) {
+        get().pushHistory();
+        const firstSegmentDuration = currentTime - clip.startTime;
+        const secondSegmentDuration = clip.duration - firstSegmentDuration;
+
+        get().updateClip(clip.id, { duration: firstSegmentDuration });
+
+        get().addClipToTrack(track.id, {
+          ...clip,
+          id: undefined,
+          startTime: currentTime,
+          duration: secondSegmentDuration,
+          mediaOffset: clip.mediaOffset + firstSegmentDuration,
+        });
+
         break;
       }
     }
-
-    if (!targetClip || !targetTrackId) return;
-
-    if (currentTime > targetClip.startTime && currentTime < targetClip.startTime + targetClip.duration) {
-      get().pushHistory();
-
-      const splitPoint = currentTime - targetClip.startTime;
-      const firstPartDuration = splitPoint;
-      const secondPartDuration = targetClip.duration - splitPoint;
-
-      const updatedFirstClip: Clip = {
-        ...targetClip,
-        duration: firstPartDuration,
-      };
-
-      const secondClipId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-      const newSecondClip: Clip = {
-        ...targetClip,
-        id: secondClipId,
-        startTime: currentTime,
-        duration: secondPartDuration,
-        mediaOffset: targetClip.mediaOffset + splitPoint * targetClip.speed,
-      };
-
-      set((state) => ({
-        tracks: state.tracks.map((track) => {
-          if (track.id === targetTrackId) {
-            return {
-              ...track,
-              clips: track.clips
-                .map((c) => (c.id === selectedClipId ? updatedFirstClip : c))
-                .concat(newSecondClip),
-            };
-          }
-          return track;
-        }),
-        selectedClipId: secondClipId,
-      }));
-    }
-  },
-
-  deleteSelectedClip: () => {
-    const { selectedClipId } = get();
-    if (!selectedClipId) return;
-    get().pushHistory();
-    set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.filter((c) => c.id !== selectedClipId),
-      })),
-      selectedClipId: null,
-    }));
   },
 
   duplicateSelectedClip: () => {
@@ -592,22 +558,29 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       const clip = track.clips.find((c) => c.id === selectedClipId);
       if (clip) {
         get().pushHistory();
-        const dupId = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-        const duplicatedClip: Clip = {
-          ...JSON.parse(JSON.stringify(clip)),
-          id: dupId,
-          startTime: clip.startTime + clip.duration + 0.2,
-        };
-
-        set((state) => ({
-          tracks: state.tracks.map((t) =>
-            t.id === track.id ? { ...t, clips: [...t.clips, duplicatedClip] } : t
-          ),
-          selectedClipId: dupId,
-        }));
+        get().addClipToTrack(track.id, {
+          ...clip,
+          id: undefined,
+          startTime: clip.startTime + clip.duration + 0.5,
+        });
         break;
       }
     }
+  },
+
+  deleteSelectedClip: () => {
+    const { selectedClipId, tracks } = get();
+    if (!selectedClipId) return;
+
+    get().pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.filter((clip) => clip.id !== selectedClipId),
+      })),
+      selectedClipId: null,
+    }));
+    get().saveProjectToDB();
   },
 
   detachAudioFromSelectedClip: () => {
@@ -618,7 +591,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       const clip = track.clips.find((c) => c.id === selectedClipId);
       if (clip && clip.type === 'video') {
         get().pushHistory();
-
         get().updateClipAudio(clip.id, { muted: true });
 
         let audioTrack = tracks.find((t) => t.type === 'audio');
@@ -646,7 +618,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     for (const track of tracks) {
       const clip = track.clips.find((c) => c.id === selectedClipId);
       if (clip) {
-        set({ copiedClip: JSON.parse(JSON.stringify(clip)) });
+        set({ copiedClip: { ...clip } });
         break;
       }
     }
@@ -657,92 +629,93 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     if (!copiedClip) return;
 
     get().pushHistory();
-
     let targetTrack = tracks.find((t) => t.type === copiedClip.type);
     let targetTrackId = targetTrack?.id || get().addTrack(copiedClip.type);
 
-    const pastedClipId = get().addClipToTrack(targetTrackId, {
+    get().addClipToTrack(targetTrackId, {
       ...copiedClip,
+      id: undefined,
       startTime: currentTime,
     });
+  },
 
-    set({ selectedClipId: pastedClipId });
+  pushHistory: () => {
+    const { tracks, history, historyIndex } = get();
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(JSON.parse(JSON.stringify(tracks)));
+    set({
+      history: newHistory,
+      historyIndex: newHistory.length - 1,
+      saveStatus: 'Unsaved changes',
+    });
+  },
+
+  undo: () => {
+    const { history, historyIndex } = get();
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      set({
+        tracks: JSON.parse(JSON.stringify(history[newIndex])),
+        historyIndex: newIndex,
+        saveStatus: 'Unsaved changes',
+      });
+      get().saveProjectToDB();
+    }
+  },
+
+  redo: () => {
+    const { history, historyIndex } = get();
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      set({
+        tracks: JSON.parse(JSON.stringify(history[newIndex])),
+        historyIndex: newIndex,
+        saveStatus: 'Unsaved changes',
+      });
+      get().saveProjectToDB();
+    }
   },
 
   loadDemoProject: () => {
-    const demoVideoTrackId = 'track-video-1';
-    const demoTextTrackId = 'track-text-1';
+    get().restoreProjectFromDB().then(() => {
+      const currentTracks = get().tracks;
+      const hasClips = currentTracks.some((t) => t.clips.length > 0);
+      if (!hasClips) {
+        const demoClips: Partial<Clip>[] = [
+          {
+            name: 'Sample Nature Clip',
+            type: 'video',
+            src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+            startTime: 0,
+            duration: 12,
+            sourceDuration: 15,
+          },
+          {
+            name: 'Intro Title',
+            type: 'text',
+            startTime: 0.5,
+            duration: 4.5,
+            text: {
+              content: 'WELCOME TO AK CUT PRO',
+              fontFamily: "'Bebas Neue', sans-serif",
+              fontSize: 52,
+              color: '#00f2fe',
+              backgroundColor: 'rgba(0,0,0,0.7)',
+              borderColor: '#ffffff',
+              borderWidth: 2,
+              alignment: 'center',
+              bold: true,
+              italic: false,
+            },
+          },
+        ];
 
-    set({
-      tracks: [
-        {
-          id: demoTextTrackId,
-          name: 'Text Track 1',
-          type: 'text',
-          muted: false,
-          locked: false,
-          hidden: false,
-          clips: [
-            {
-              id: 'demo-text-1',
-              trackId: demoTextTrackId,
-              name: 'Intro Title',
-              type: 'text',
-              startTime: 0.5,
-              duration: 4.5,
-              mediaOffset: 0,
-              sourceDuration: 4.5,
-              src: '',
-              speed: 1,
-              speedCurve: 'flat',
-              transform: DEFAULT_TRANSFORM,
-              filter: DEFAULT_FILTER,
-              audio: DEFAULT_AUDIO,
-              text: {
-                content: 'WELCOME TO AK CUT',
-                fontFamily: 'sans-serif',
-                fontSize: 44,
-                color: '#00f2fe',
-                backgroundColor: 'rgba(0,0,0,0.5)',
-                borderColor: '#ffffff',
-                borderWidth: 1,
-                alignment: 'center',
-                bold: true,
-                italic: false,
-              },
-              keyframes: [],
-            },
-          ],
-        },
-        {
-          id: demoVideoTrackId,
-          name: 'Video Track 1',
-          type: 'video',
-          muted: false,
-          locked: false,
-          hidden: false,
-          clips: [
-            {
-              id: 'demo-video-1',
-              trackId: demoVideoTrackId,
-              name: 'Sample Nature Clip',
-              type: 'video',
-              startTime: 0,
-              duration: 12,
-              mediaOffset: 0,
-              sourceDuration: 12,
-              src: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-              speed: 1,
-              speedCurve: 'flat',
-              transform: DEFAULT_TRANSFORM,
-              filter: DEFAULT_FILTER,
-              audio: DEFAULT_AUDIO,
-              keyframes: [],
-            },
-          ],
-        },
-      ],
-      selectedClipId: 'demo-video-1',
+        let videoTrack = currentTracks.find((t) => t.type === 'video');
+        let textTrack = currentTracks.find((t) => t.type === 'text');
+
+        if (videoTrack) get().addClipToTrack(videoTrack.id, demoClips[0]);
+        if (textTrack) get().addClipToTrack(textTrack.id, demoClips[1]);
+      }
     });
   },
 }));
