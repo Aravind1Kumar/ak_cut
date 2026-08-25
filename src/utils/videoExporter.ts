@@ -2,6 +2,7 @@ import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip } from '../types/timeline';
+import { audioBufferToWav } from './audioWavEncoder';
 
 export interface ExportSettings {
   resolution: '720p' | '1080p' | '4K';
@@ -33,6 +34,31 @@ async function getFFmpegInstance(onProgress?: (percent: number) => void): Promis
   }
 
   return ffmpeg;
+}
+
+// Deterministic Async Video Frame Seeking
+function seekVideoFrame(video: HTMLVideoElement, targetTime: number): Promise<void> {
+  return new Promise((resolve) => {
+    const clampedTime = Math.max(0, targetTime);
+    if (Math.abs(video.currentTime - clampedTime) < 0.01) {
+      resolve();
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      video.removeEventListener('seeked', onSeeked);
+      resolve();
+    }, 400); // 400ms fallback safety limit
+
+    const onSeeked = () => {
+      clearTimeout(timeout);
+      video.removeEventListener('seeked', onSeeked);
+      resolve();
+    };
+
+    video.addEventListener('seeked', onSeeked);
+    video.currentTime = clampedTime;
+  });
 }
 
 // Keyframe Interpolation for Export Renderer
@@ -237,12 +263,15 @@ export async function exportVideoProject(
           ctx.drawImage(img, -width / 2, -height / 2, width, height);
         }
       }
-      // Render Video Clip
+      // Render Video Clip with Deterministic Async Frame Seeking
       else if (clip.type === 'video') {
         const vid = videoElementsMap.get(clip.id);
         if (vid) {
-          const mediaTime = relTime * clip.speed + clip.mediaOffset;
-          vid.currentTime = mediaTime;
+          const mediaTime = Math.min(
+            clip.sourceDuration || 999,
+            clip.mediaOffset + relTime * clip.speed
+          );
+          await seekVideoFrame(vid, mediaTime);
           ctx.drawImage(vid, -width / 2, -height / 2, width, height);
         }
       }
@@ -284,36 +313,104 @@ export async function exportVideoProject(
     const frameName = `frame_${frameIdx.toString().padStart(4, '0')}.png`;
     await ffmpeg.writeFile(frameName, frameData);
 
-    // Report frame rendering progress (0% -> 70%)
+    // Report frame rendering progress (0% -> 60%)
     if (onProgress) {
-      onProgress(Math.round((frameIdx / totalFrames) * 70));
+      onProgress(Math.round((frameIdx / totalFrames) * 60));
     }
   }
 
-  // 4. Run FFmpeg Encoding Command to produce MP4
-  await ffmpeg.exec([
+  // 4. Web Audio API Offline Audio Mixing & WAV Encoding
+  let hasAudioInput = false;
+  try {
+    const sampleRate = 44100;
+    const offlineAudioCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
+      2,
+      Math.max(1, Math.ceil(duration * sampleRate)),
+      sampleRate
+    );
+
+    let audioSourceCount = 0;
+    for (const track of tracks) {
+      if (track.muted) continue;
+      for (const clip of track.clips) {
+        if ((clip.type === 'audio' || clip.type === 'video') && clip.src && !clip.audio.muted) {
+          try {
+            const resp = await fetch(clip.src);
+            const buf = await resp.arrayBuffer();
+            const decodedAudio = await offlineAudioCtx.decodeAudioData(buf);
+
+            const sourceNode = offlineAudioCtx.createBufferSource();
+            sourceNode.buffer = decodedAudio;
+            sourceNode.playbackRate.value = clip.speed || 1;
+
+            const gainNode = offlineAudioCtx.createGain();
+            gainNode.gain.value = Math.max(0, Math.min(2, clip.audio.volume));
+
+            sourceNode.connect(gainNode);
+            gainNode.connect(offlineAudioCtx.destination);
+
+            const startOffset = Math.max(0, clip.startTime);
+            const playDuration = Math.min(clip.duration, decodedAudio.duration / clip.speed);
+            sourceNode.start(startOffset, clip.mediaOffset, playDuration);
+            audioSourceCount++;
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (audioSourceCount > 0) {
+      const renderedAudioBuffer = await offlineAudioCtx.startRendering();
+      const wavBytes = audioBufferToWav(renderedAudioBuffer);
+      await ffmpeg.writeFile('audio_mix.wav', wavBytes);
+      hasAudioInput = true;
+    }
+  } catch (e) {
+    console.warn('Audio mixing skipped or unavailable:', e);
+  }
+
+  // 5. Run FFmpeg Encoding Command to produce MP4 with Audio + Video
+  const ffmpegArgs = [
     '-framerate',
     `${fps}`,
     '-i',
     'frame_%04d.png',
+  ];
+
+  if (hasAudioInput) {
+    ffmpegArgs.push('-i', 'audio_mix.wav');
+  }
+
+  ffmpegArgs.push(
     '-c:v',
     'libx264',
     '-pix_fmt',
     'yuv420p',
     '-preset',
-    'ultrafast',
-    'output.mp4',
-  ]);
+    'ultrafast'
+  );
 
-  // 5. Read Encoded Output MP4 File from Virtual FS
+  if (hasAudioInput) {
+    ffmpegArgs.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
+  }
+
+  ffmpegArgs.push('output.mp4');
+
+  await ffmpeg.exec(ffmpegArgs);
+
+  // 6. Read Encoded Output MP4 File from Virtual FS
   const outputData = (await ffmpeg.readFile('output.mp4')) as Uint8Array;
   const mp4Blob = new Blob([new Uint8Array(outputData)], { type: 'video/mp4' });
 
-  // 6. Clean up Virtual Filesystem
+  // 7. Progressive Memory Cleanup
   for (let i = 0; i < totalFrames; i++) {
     const frameName = `frame_${i.toString().padStart(4, '0')}.png`;
     try {
       await ffmpeg.deleteFile(frameName);
+    } catch (e) {}
+  }
+  if (hasAudioInput) {
+    try {
+      await ffmpeg.deleteFile('audio_mix.wav');
     } catch (e) {}
   }
   try {
