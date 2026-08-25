@@ -20,6 +20,8 @@ import {
   Magnet,
   Layers,
   FileAudio,
+  ArrowRightLeft,
+  GripVertical,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track, MediaType } from '../types/timeline';
@@ -28,6 +30,7 @@ export const Timeline: React.FC = () => {
   const timelineRef = useRef<HTMLDivElement | null>(null);
   const [draggingClip, setDraggingClip] = useState<{ id: string; startX: number; originalStart: number } | null>(null);
   const [trimmingClip, setTrimmingClip] = useState<{ id: string; edge: 'left' | 'right'; startX: number; originalStart: number; originalDuration: number } | null>(null);
+  const [isScrubbingPlayhead, setIsScrubbingPlayhead] = useState(false);
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
@@ -53,8 +56,6 @@ export const Timeline: React.FC = () => {
     duplicateSelectedClip,
     deleteSelectedClip,
     detachAudioFromSelectedClip,
-    copySelectedClip,
-    pasteClipAtPlayhead,
   } = useTimelineStore();
 
   // Close context menu on outside click
@@ -64,16 +65,21 @@ export const Timeline: React.FC = () => {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  // Handle Playhead Scrubbing
-  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Throttled Playhead Scrubbing without lag
+  const updateScrubPosition = (clientX: number) => {
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
+    const clickX = clientX - rect.left;
     const newTime = Math.max(0, clickX / zoomLevel);
     setCurrentTime(newTime);
   };
 
-  // Handle Right Click Context Menu on Clips
+  const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    setIsScrubbingPlayhead(true);
+    updateScrubPosition(e.clientX);
+  };
+
+  // Right Click Context Menu on Clips
   const handleClipContextMenu = (e: React.MouseEvent, clipId: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -81,7 +87,7 @@ export const Timeline: React.FC = () => {
     setContextMenu({ x: e.clientX, y: e.clientY, clipId });
   };
 
-  // Mouse Move Window Listener for Drag & Trim
+  // Mouse & Touch Drag / Trim Handlers
   const handleClipMouseDown = (e: React.MouseEvent, clip: Clip, track: Track) => {
     if (track.locked) return;
     e.stopPropagation();
@@ -107,12 +113,13 @@ export const Timeline: React.FC = () => {
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (draggingClip) {
+    if (isScrubbingPlayhead) {
+      updateScrubPosition(e.clientX);
+    } else if (draggingClip) {
       const deltaX = e.clientX - draggingClip.startX;
       let deltaTime = deltaX / zoomLevel;
       let newStart = Math.max(0, draggingClip.originalStart + deltaTime);
 
-      // Snapping logic to playhead
       if (snappingEnabled && Math.abs(newStart - currentTime) < 0.2) {
         newStart = currentTime;
       }
@@ -124,16 +131,17 @@ export const Timeline: React.FC = () => {
 
       if (trimmingClip.edge === 'left') {
         const newStart = Math.max(0, trimmingClip.originalStart + deltaTime);
-        const newDuration = Math.max(0.5, trimmingClip.originalDuration - deltaTime);
+        const newDuration = Math.max(0.3, trimmingClip.originalDuration - deltaTime);
         updateClip(trimmingClip.id, { startTime: newStart, duration: newDuration });
       } else {
-        const newDuration = Math.max(0.5, trimmingClip.originalDuration + deltaTime);
+        const newDuration = Math.max(0.3, trimmingClip.originalDuration + deltaTime);
         updateClip(trimmingClip.id, { duration: newDuration });
       }
     }
   };
 
   const handleMouseUp = () => {
+    setIsScrubbingPlayhead(false);
     setDraggingClip(null);
     setTrimmingClip(null);
   };
@@ -163,6 +171,7 @@ export const Timeline: React.FC = () => {
       className="h-64 bg-dark-800 border-t border-dark-700 flex flex-col select-none z-30 overflow-hidden relative"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
       {/* Timeline Toolbar Bar */}
       <div className="h-10 bg-dark-900/60 border-b border-dark-700 px-4 flex items-center justify-between">
@@ -255,7 +264,7 @@ export const Timeline: React.FC = () => {
       {/* Main Track & Timeline Area */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Track Headers (Left Column) */}
-        <div className="w-56 bg-dark-800 border-r border-dark-700 flex flex-col z-20 shadow-lg">
+        <div className="w-56 bg-dark-800 border-r border-dark-700 flex flex-col z-20 shadow-lg shrink-0">
           <div className="h-7 border-b border-dark-700 bg-dark-900/40 px-3 flex items-center justify-between">
             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tracks</span>
             <span className="text-[10px] text-gray-500">{tracks.length}</span>
@@ -272,7 +281,6 @@ export const Timeline: React.FC = () => {
                   <span className="text-xs font-semibold text-gray-300 truncate">{track.name}</span>
                 </div>
 
-                {/* Track Controls: Hide, Mute, Lock, Delete */}
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={() => toggleTrackHidden(track.id)}
@@ -318,7 +326,11 @@ export const Timeline: React.FC = () => {
         </div>
 
         {/* Timeline Ruler & Track Content Canvas */}
-        <div className="flex-1 overflow-x-auto overflow-y-auto relative" ref={timelineRef} onClick={handleTimelineClick}>
+        <div
+          className="flex-1 overflow-x-auto overflow-y-auto relative"
+          ref={timelineRef}
+          onMouseDown={handleTimelineMouseDown}
+        >
           {/* Playhead Red Needle */}
           <div
             className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-30 pointer-events-none"
@@ -356,6 +368,7 @@ export const Timeline: React.FC = () => {
                   const clipLeft = clip.startTime * zoomLevel;
                   const clipWidth = clip.duration * zoomLevel;
                   const isSelected = clip.id === selectedClipId;
+                  const hasTransition = clip.transition && clip.transition.type !== 'none';
 
                   return (
                     <div
@@ -368,7 +381,7 @@ export const Timeline: React.FC = () => {
                       }}
                       className={`absolute top-1.5 bottom-1.5 rounded-lg p-2 cursor-grab active:cursor-grabbing border flex items-center justify-between overflow-hidden shadow-sm transition-shadow ${
                         isSelected
-                          ? 'bg-gradient-to-r from-cyan-900/80 to-blue-900/80 border-cyan-400 ring-2 ring-cyan-500/30'
+                          ? 'bg-gradient-to-r from-cyan-900/80 to-blue-900/80 border-cyan-400 ring-2 ring-cyan-500/40'
                           : clip.type === 'video'
                           ? 'bg-blue-950/60 border-blue-700/60 hover:border-blue-500'
                           : clip.type === 'audio'
@@ -376,28 +389,46 @@ export const Timeline: React.FC = () => {
                           : 'bg-purple-950/60 border-purple-700/60 hover:border-purple-500'
                       }`}
                     >
-                      {/* Left Trim Handle */}
+                      {/* Left Edge Drag Handle (Shorten / Trim Start) */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
-                        className="absolute left-0 top-0 bottom-0 w-2.5 bg-white/20 hover:bg-cyan-400 cursor-ew-resize rounded-l"
-                      />
+                        className={`absolute left-0 top-0 bottom-0 w-3 hover:w-4 flex items-center justify-center cursor-ew-resize rounded-l transition-all ${
+                          isSelected ? 'bg-cyan-400 text-dark-900 font-bold' : 'bg-white/20 hover:bg-cyan-400'
+                        }`}
+                        title="Drag to trim start duration"
+                      >
+                        <GripVertical className="w-3 h-3" />
+                      </div>
 
                       {/* Clip Label */}
-                      <div className="flex items-center space-x-1.5 ml-2 truncate">
+                      <div className="flex items-center space-x-1.5 ml-3 truncate">
                         {getTrackIcon(clip.type)}
                         <span className="text-[11px] font-bold text-white truncate">{clip.name}</span>
                       </div>
 
+                      {/* Visual Transition Badge on Timeline */}
+                      {hasTransition && (
+                        <div className="flex items-center space-x-1 px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white rounded text-[9px] font-extrabold shadow animate-pulse">
+                          <ArrowRightLeft className="w-3 h-3" />
+                          <span className="uppercase">{clip.transition?.type}</span>
+                        </div>
+                      )}
+
                       {/* Duration Badge */}
-                      <span className="text-[10px] font-mono text-gray-300 mr-2 bg-black/40 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-gray-300 mr-3 bg-black/40 px-1.5 py-0.5 rounded">
                         {clip.duration.toFixed(1)}s
                       </span>
 
-                      {/* Right Trim Handle */}
+                      {/* Right Edge Drag Handle (Shorten / Trim End) */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'right')}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 bg-white/20 hover:bg-cyan-400 cursor-ew-resize rounded-r"
-                      />
+                        className={`absolute right-0 top-0 bottom-0 w-3 hover:w-4 flex items-center justify-center cursor-ew-resize rounded-r transition-all ${
+                          isSelected ? 'bg-cyan-400 text-dark-900 font-bold' : 'bg-white/20 hover:bg-cyan-400'
+                        }`}
+                        title="Drag to trim end duration"
+                      >
+                        <GripVertical className="w-3 h-3" />
+                      </div>
                     </div>
                   );
                 })}

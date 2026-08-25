@@ -16,9 +16,10 @@ import {
   Gauge,
   Plus,
   Headphones,
+  PenTool,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { SpeedCurveType, MaskType } from '../types/timeline';
+import { SpeedCurveType, MaskType, Point2D } from '../types/timeline';
 
 const FONT_OPTIONS = [
   { name: 'Inter (Modern)', value: 'Inter, sans-serif' },
@@ -112,6 +113,21 @@ export const Inspector: React.FC = () => {
   }
 
   const { transform, filter, audio, text, chromaKey, mask, speedCurve, speed, keyframes } = selectedClip;
+
+  const handleAddPenPoint = () => {
+    const currentPoints = mask?.points || [
+      { x: -30, y: -30 },
+      { x: 30, y: -30 },
+      { x: 30, y: 30 },
+      { x: -30, y: 30 },
+    ];
+    const newPoint: Point2D = { x: 0, y: 0 };
+    updateClipMask(selectedClip.id, {
+      type: 'pen',
+      feather: mask?.feather || 0,
+      points: [...currentPoints, newPoint],
+    });
+  };
 
   return (
     <aside className="w-80 bg-dark-800 border-l border-dark-700 flex flex-col h-full select-none z-20">
@@ -309,10 +325,25 @@ export const Inspector: React.FC = () => {
                   { name: '⭕ Circle Mask', type: 'circle' },
                   { name: '⬛ Rectangle Mask', type: 'rectangle' },
                   { name: '✂️ Split Screen', type: 'splitLeft' },
+                  { name: '🖊️ Custom Pen Tool', type: 'pen' },
                 ].map((m) => (
                   <button
                     key={m.type}
-                    onClick={() => updateClipMask(selectedClip.id, { type: m.type as MaskType })}
+                    onClick={() =>
+                      updateClipMask(selectedClip.id, {
+                        type: m.type as MaskType,
+                        feather: mask.feather || 0,
+                        points:
+                          m.type === 'pen'
+                            ? mask.points || [
+                                { x: -30, y: -30 },
+                                { x: 30, y: -30 },
+                                { x: 30, y: 30 },
+                                { x: -30, y: 30 },
+                              ]
+                            : undefined,
+                      })
+                    }
                     className={`p-2.5 rounded-xl border text-xs font-semibold text-left transition ${
                       mask.type === m.type
                         ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
@@ -324,6 +355,60 @@ export const Inspector: React.FC = () => {
                 ))}
               </div>
             </div>
+
+            {/* Custom Pen Tool Control Points */}
+            {mask.type === 'pen' && (
+              <div className="p-3 bg-dark-900/80 border border-cyan-500/30 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-cyan-300 flex items-center space-x-1">
+                    <PenTool className="w-3.5 h-3.5" />
+                    <span>Pen Polygon Control Points</span>
+                  </span>
+                  <button
+                    onClick={handleAddPenPoint}
+                    className="px-2 py-1 bg-cyan-500/20 text-cyan-300 font-semibold rounded text-[10px] hover:bg-cyan-500 hover:text-white transition"
+                  >
+                    + Add Point
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                  {(mask.points || []).map((pt, idx) => (
+                    <div key={idx} className="flex items-center space-x-2 bg-dark-800 p-2 rounded-lg border border-dark-700">
+                      <span className="font-mono text-cyan-400 font-bold w-6">P{idx + 1}</span>
+                      <div className="flex-1 flex items-center space-x-2">
+                        <label className="text-[10px] text-gray-400">X:</label>
+                        <input
+                          type="range"
+                          min="-50"
+                          max="50"
+                          value={pt.x}
+                          onChange={(e) => {
+                            const newPts = [...(mask.points || [])];
+                            newPts[idx] = { ...newPts[idx], x: parseInt(e.target.value) };
+                            updateClipMask(selectedClip.id, { ...mask, points: newPts });
+                          }}
+                          className="w-full accent-cyan-400 h-1 bg-dark-900 rounded"
+                        />
+                        <label className="text-[10px] text-gray-400">Y:</label>
+                        <input
+                          type="range"
+                          min="-50"
+                          max="50"
+                          value={pt.y}
+                          onChange={(e) => {
+                            const newPts = [...(mask.points || [])];
+                            newPts[idx] = { ...newPts[idx], y: parseInt(e.target.value) };
+                            updateClipMask(selectedClip.id, { ...mask, points: newPts });
+                          }}
+                          className="w-full accent-cyan-400 h-1 bg-dark-900 rounded"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

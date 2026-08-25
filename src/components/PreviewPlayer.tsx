@@ -134,7 +134,7 @@ export const PreviewPlayer: React.FC = () => {
     return clip.transform;
   };
 
-  // Render Frame Engine (Video, Image, Text, Keyframe, Masking, Chroma Key)
+  // Render Frame Engine (Video, Image, Text, Keyframe, Masking, Pen Tool, Chroma Key)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -196,7 +196,7 @@ export const PreviewPlayer: React.FC = () => {
 
       ctx.save();
 
-      // Masking Path
+      // Masking Path (Circle, Rectangle, Split, Pen Tool)
       if (clip.mask && clip.mask.type !== 'none') {
         ctx.beginPath();
         if (clip.mask.type === 'circle') {
@@ -205,6 +205,14 @@ export const PreviewPlayer: React.FC = () => {
           ctx.rect(width * 0.15, height * 0.15, width * 0.7, height * 0.7);
         } else if (clip.mask.type === 'splitLeft') {
           ctx.rect(0, 0, width / 2, height);
+        } else if (clip.mask.type === 'pen' && clip.mask.points && clip.mask.points.length > 0) {
+          clip.mask.points.forEach((pt, i) => {
+            const px = width / 2 + (pt.x / 100) * width;
+            const py = height / 2 + (pt.y / 100) * height;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.closePath();
         }
         ctx.clip();
       }
@@ -229,7 +237,7 @@ export const PreviewPlayer: React.FC = () => {
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
 
-      // IMAGE CLIP RENDERING (InShot / KineMaster Photo Editing Engine)
+      // IMAGE CLIP RENDERING
       if (clip.type === 'image' && clip.src) {
         let imgEl = activeImageElementsRef.current.get(clip.id);
         if (!imgEl) {
@@ -255,7 +263,7 @@ export const PreviewPlayer: React.FC = () => {
                 const b = data[i + 2];
 
                 if (g > 100 && g > r + threshold / 2 && g > b + threshold / 2) {
-                  data[i + 3] = 0; // Transparent
+                  data[i + 3] = 0;
                 }
               }
               ctx.putImageData(frameData, 0, 0);
@@ -305,7 +313,7 @@ export const PreviewPlayer: React.FC = () => {
                 const b = data[i + 2];
 
                 if (g > 100 && g > r + threshold / 2 && g > b + threshold / 2) {
-                  data[i + 3] = 0; // Transparent
+                  data[i + 3] = 0;
                 }
               }
               ctx.putImageData(frameData, 0, 0);

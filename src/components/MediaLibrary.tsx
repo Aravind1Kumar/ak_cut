@@ -11,15 +11,21 @@ import {
   Image as ImageIcon,
   ArrowRightLeft,
   Upload,
+  Eye,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { MediaType, TransitionType } from '../types/timeline';
+import { MediaType, TransitionType, MediaAsset } from '../types/timeline';
+import { SourceMonitor } from './SourceMonitor';
 
 const PRESET_TRANSITIONS = [
   { name: '🌅 Cross Dissolve / Fade', type: 'fade', duration: 0.8 },
   { name: '🔍 Zoom Blur In', type: 'zoom', duration: 0.6 },
   { name: '↔️ Wipe Left to Right', type: 'wipe', duration: 0.7 },
   { name: '💥 Flash White', type: 'flash', duration: 0.4 },
+  { name: '👾 Glitch Shift', type: 'glitch', duration: 0.5 },
+  { name: '🌀 Spin Rotate', type: 'spin', duration: 0.6 },
+  { name: '⬆️ Slide Up Push', type: 'slide', duration: 0.5 },
+  { name: '🔮 Blur Dissolve', type: 'blur', duration: 0.7 },
 ];
 
 const PRESET_EFFECTS = [
@@ -37,6 +43,7 @@ const PRESET_EFFECTS = [
 export const MediaLibrary: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'media' | 'text' | 'audio' | 'transitions' | 'effects' | 'ai'>('media');
   const [customText, setCustomText] = useState('My Custom Preferred Text');
+  const [selectedSourceAsset, setSelectedSourceAsset] = useState<MediaAsset | null>(null);
 
   const {
     tracks,
@@ -95,7 +102,7 @@ export const MediaLibrary: React.FC = () => {
       const url = URL.createObjectURL(file);
       const sizeFormatted = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
 
-      const assetId = addMediaAsset({
+      addMediaAsset({
         name: file.name,
         type: 'audio',
         src: url,
@@ -178,11 +185,16 @@ export const MediaLibrary: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Source Monitor Overlay if Active */}
+        {selectedSourceAsset && (
+          <SourceMonitor asset={selectedSourceAsset} onClose={() => setSelectedSourceAsset(null)} />
+        )}
+
         {/* TRANSITIONS TAB */}
         {activeTab === 'transitions' && (
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Video Transitions</h3>
-            <div className="grid grid-cols-1 gap-2">
+            <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1">
               {PRESET_TRANSITIONS.map((tr, idx) => (
                 <div
                   key={idx}
@@ -198,7 +210,7 @@ export const MediaLibrary: React.FC = () => {
                 >
                   <div>
                     <div className="text-xs font-semibold text-gray-200">{tr.name}</div>
-                    <div className="text-[10px] text-gray-500">Duration: {tr.duration}s</div>
+                    <div className="text-[10px] text-cyan-400 font-medium">Duration: {tr.duration}s</div>
                   </div>
                   <Plus className="w-4 h-4 text-cyan-400 group-hover:scale-125 transition-transform" />
                 </div>
@@ -238,7 +250,11 @@ export const MediaLibrary: React.FC = () => {
                       key={asset.id}
                       className="flex items-center justify-between p-2.5 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl transition group"
                     >
-                      <div className="flex items-center space-x-2.5 truncate max-w-[170px]">
+                      <div
+                        onClick={() => setSelectedSourceAsset(asset)}
+                        className="flex items-center space-x-2.5 truncate max-w-[150px] cursor-pointer"
+                        title="Click to open Source Cut Monitor"
+                      >
                         <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center shrink-0">
                           {asset.type === 'video' ? (
                             <Film className="w-4 h-4 text-cyan-400" />
@@ -258,6 +274,14 @@ export const MediaLibrary: React.FC = () => {
 
                       <div className="flex items-center space-x-1">
                         <button
+                          onClick={() => setSelectedSourceAsset(asset)}
+                          title="Open Source Cut Monitor"
+                          className="p-1.5 bg-cyan-500/10 hover:bg-cyan-500/30 text-cyan-400 rounded-md transition"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
                           onClick={() => {
                             let targetTrack = tracks.find((t) => t.type === asset.type);
                             let targetTrackId = targetTrack?.id || addTrack(asset.type);
@@ -269,7 +293,7 @@ export const MediaLibrary: React.FC = () => {
                               sourceDuration: asset.duration,
                             });
                           }}
-                          title="Add to Timeline"
+                          title="Add Full Clip to Timeline"
                           className="p-1.5 bg-cyan-500/20 hover:bg-cyan-500 text-cyan-300 hover:text-white rounded-md transition"
                         >
                           <Plus className="w-3.5 h-3.5" />
