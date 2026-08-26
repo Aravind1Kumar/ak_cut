@@ -105,15 +105,15 @@ export const App: React.FC = () => {
               </div>
               <div className="flex items-start space-x-2">
                 <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-                <span><strong className="text-white">Social Formats:</strong> Switch between 16:9 and 9:16 vertical canvas.</span>
+                <span><strong className="text-white">Social Formats:</strong> Switch between 16:9, 9:16, and 4:5 social ratios.</span>
+              </div>
+              <div className="flex items-start space-x-2">
+                <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <span><strong className="text-white">Direct Canvas Text:</strong> Click Text, type directly on canvas, drag & scale!</span>
               </div>
               <div className="flex items-start space-x-2">
                 <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
                 <span><strong className="text-white">Command Palette:</strong> Press <kbd className="px-1.5 py-0.5 bg-dark-900 border border-dark-700 text-cyan-300 rounded text-[10px]">Ctrl+K</kbd> to search shortcuts.</span>
-              </div>
-              <div className="flex items-start space-x-2">
-                <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-                <span><strong className="text-white">Durable Save:</strong> Projects auto-save locally via IndexedDB.</span>
               </div>
             </div>
 
@@ -129,3 +129,5 @@ export const App: React.FC = () => {
     </div>
   );
 };
+
+export default App;
