@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Sliders,
   Type,
@@ -13,6 +13,9 @@ import {
   Layers,
   FileText,
   Download,
+  RotateCcw,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { exportClipsToSRT } from '../utils/srtExporter';
@@ -34,6 +37,17 @@ const CAPTION_STYLE_PRESETS = [
 ];
 
 export const Inspector: React.FC = () => {
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    transform: true,
+    text: true,
+    audio: true,
+    filter: false,
+  });
+
+  const toggleSection = (section: string) => {
+    setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
   const {
     tracks,
     selectedClipId,
@@ -42,9 +56,9 @@ export const Inspector: React.FC = () => {
     updateClipAudio,
     updateClipText,
     updateClipCaption,
-    updateClipSpeedCurve,
     addKeyframeToClip,
-    removeKeyframeFromClip,
+    beginTransaction,
+    commitTransaction,
   } = useTimelineStore();
 
   let selectedClip = null;
@@ -60,13 +74,23 @@ export const Inspector: React.FC = () => {
     return (
       <aside className="w-80 bg-dark-800 border-l border-dark-700 p-4 flex flex-col items-center justify-center text-center select-none z-20">
         <Sliders className="w-10 h-10 text-gray-600 mb-2" />
-        <h3 className="text-sm font-semibold text-gray-300">No Clip Selected</h3>
+        <h3 className="text-sm font-semibold text-gray-300">Select a clip to edit</h3>
         <p className="text-xs text-gray-500 mt-1 max-w-[200px]">
           Click any video, image, text, or caption clip on the timeline to edit properties.
         </p>
       </aside>
     );
   }
+
+  const resetProperty = (prop: 'position' | 'scale' | 'rotation' | 'opacity' | 'volume') => {
+    beginTransaction();
+    if (prop === 'position') updateClipTransform(selectedClip!.id, { x: 0, y: 0 });
+    else if (prop === 'scale') updateClipTransform(selectedClip!.id, { scale: 1.0 });
+    else if (prop === 'rotation') updateClipTransform(selectedClip!.id, { rotation: 0 });
+    else if (prop === 'opacity') updateClipTransform(selectedClip!.id, { opacity: 1.0 });
+    else if (prop === 'volume') updateClipAudio(selectedClip!.id, { volume: 1.0 });
+    commitTransaction();
+  };
 
   const handleSRTExport = () => {
     const allClips = tracks.flatMap((t) => t.clips);
@@ -81,7 +105,7 @@ export const Inspector: React.FC = () => {
   };
 
   return (
-    <aside className="w-80 bg-dark-800 border-l border-dark-700 flex flex-col h-full select-none z-20 overflow-y-auto p-4 space-y-5">
+    <aside className="w-80 bg-dark-800 border-l border-dark-700 flex flex-col h-full select-none z-20 overflow-y-auto p-4 space-y-4">
       {/* Header Info */}
       <div className="flex items-center justify-between pb-3 border-b border-dark-700">
         <div>
@@ -90,136 +114,157 @@ export const Inspector: React.FC = () => {
         </div>
 
         <button
-          onClick={() => addKeyframeToClip(selectedClip.id)}
+          onClick={() => addKeyframeToClip(selectedClip!.id)}
           className="flex items-center space-x-1 px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-semibold transition"
-          title="Add Keyframe at current playhead position"
+          title="Add Keyframe at playhead position"
         >
           <Bookmark className="w-3.5 h-3.5" />
           <span>Keyframe</span>
         </button>
       </div>
 
-      {/* TEXT / LOWER THIRD PRESETS */}
-      {selectedClip.type === 'text' && selectedClip.text && (
-        <div className="space-y-3">
-          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Text & Lower-Third Presets</h4>
-          <div className="grid grid-cols-1 gap-2">
-            {TEXT_PRESETS.map((preset, idx) => (
-              <button
-                key={idx}
-                onClick={() =>
-                  updateClipText(selectedClip!.id, {
-                    content: preset.content,
-                    color: preset.color,
-                    backgroundColor: preset.bg,
-                    fontSize: preset.size,
-                  })
-                }
-                className="p-2.5 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl text-left transition"
-              >
-                <div className="text-xs font-semibold text-gray-200">{preset.name}</div>
-              </button>
-            ))}
-          </div>
+      {/* TRANSFORM SECTION */}
+      <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+        <button
+          onClick={() => toggleSection('transform')}
+          className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+        >
+          <span>Transform</span>
+          {openSections.transform ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
 
-          <div className="space-y-2 pt-2">
-            <label className="block text-xs font-semibold text-gray-300">Edit Text Content</label>
-            <textarea
-              rows={2}
-              value={selectedClip.text.content}
-              onChange={(e) => updateClipText(selectedClip!.id, { content: e.target.value })}
-              className="w-full bg-dark-900 border border-dark-600 rounded-lg p-2 text-xs text-white outline-none focus:border-cyan-500"
-            />
-          </div>
-        </div>
-      )}
+        {openSections.transform && (
+          <div className="p-3 space-y-3">
+            {/* Position X / Y */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">Position X / Y (%)</span>
+                <button
+                  onClick={() => resetProperty('position')}
+                  className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5"
+                  title="Reset Position to 0,0"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  value={Math.round(selectedClip.transform.x)}
+                  onChange={(e) => updateClipTransform(selectedClip!.id, { x: parseFloat(e.target.value) || 0 })}
+                  className="bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white text-center outline-none focus:border-cyan-500"
+                />
+                <input
+                  type="number"
+                  value={Math.round(selectedClip.transform.y)}
+                  onChange={(e) => updateClipTransform(selectedClip!.id, { y: parseFloat(e.target.value) || 0 })}
+                  className="bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white text-center outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
 
-      {/* CAPTION STYLES & SRT EXPORT */}
-      {selectedClip.type === 'caption' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Caption Preset Styles</h4>
-            <button
-              onClick={handleSRTExport}
-              className="flex items-center space-x-1 px-2 py-1 bg-purple-500/20 text-purple-300 hover:bg-purple-500/30 rounded text-[10px] font-bold border border-purple-500/40 transition"
-              title="Download timeline captions as .SRT file"
-            >
-              <Download className="w-3 h-3" />
-              <span>Export .SRT</span>
-            </button>
-          </div>
+            {/* Scale Slider + Numeric Input */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">Scale ({Math.round(selectedClip.transform.scale * 100)}%)</span>
+                <button
+                  onClick={() => resetProperty('scale')}
+                  className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="range"
+                  min="0.1"
+                  max="3.0"
+                  step="0.05"
+                  value={selectedClip.transform.scale}
+                  onChange={(e) => updateClipTransform(selectedClip!.id, { scale: parseFloat(e.target.value) })}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  value={selectedClip.transform.scale}
+                  onChange={(e) => updateClipTransform(selectedClip!.id, { scale: parseFloat(e.target.value) || 1 })}
+                  className="w-14 bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white text-center outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 gap-2">
-            {CAPTION_STYLE_PRESETS.map((st) => (
-              <button
-                key={st.id}
-                onClick={() => updateClipCaption(selectedClip!.id, { stylePreset: st.id as any })}
-                className="p-2.5 bg-dark-700/40 hover:bg-dark-700 border border-dark-600 rounded-xl text-left text-xs font-semibold text-gray-200 transition"
-              >
-                {st.name}
-              </button>
-            ))}
+            {/* Rotation Slider + Numeric Input */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">Rotation ({selectedClip.transform.rotation}°)</span>
+                <button
+                  onClick={() => resetProperty('rotation')}
+                  className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  value={selectedClip.transform.rotation}
+                  onChange={(e) => updateClipTransform(selectedClip!.id, { rotation: parseInt(e.target.value) })}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+                <input
+                  type="number"
+                  value={selectedClip.transform.rotation}
+                  onChange={(e) => updateClipTransform(selectedClip!.id, { rotation: parseInt(e.target.value) || 0 })}
+                  className="w-14 bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white text-center outline-none focus:border-cyan-500"
+                />
+              </div>
+            </div>
           </div>
-
-          <div className="space-y-2 pt-2">
-            <label className="block text-xs font-semibold text-gray-300">Edit Subtitle Text</label>
-            <input
-              type="text"
-              value={selectedClip.caption?.text || ''}
-              onChange={(e) => updateClipCaption(selectedClip!.id, { text: e.target.value })}
-              className="w-full bg-dark-900 border border-dark-600 rounded-lg p-2 text-xs text-white outline-none focus:border-cyan-500"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* TRANSFORM CONTROLS */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Transform</h4>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-[10px] font-semibold text-gray-400">Scale ({selectedClip.transform.scale.toFixed(2)}x)</label>
-            <input
-              type="range"
-              min="0.1"
-              max="3.0"
-              step="0.05"
-              value={selectedClip.transform.scale}
-              onChange={(e) => updateClipTransform(selectedClip!.id, { scale: parseFloat(e.target.value) })}
-              className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer mt-1"
-            />
-          </div>
-
-          <div>
-            <label className="text-[10px] font-semibold text-gray-400">Rotation ({selectedClip.transform.rotation}°)</label>
-            <input
-              type="range"
-              min="-180"
-              max="180"
-              value={selectedClip.transform.rotation}
-              onChange={(e) => updateClipTransform(selectedClip!.id, { rotation: parseInt(e.target.value) })}
-              className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer mt-1"
-            />
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* AUDIO CONTROLS */}
+      {/* AUDIO SECTION */}
       {(selectedClip.type === 'video' || selectedClip.type === 'audio') && (
-        <div className="space-y-3">
-          <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider">Audio Controls</h4>
-          <div>
-            <label className="text-[10px] font-semibold text-gray-400">Volume ({Math.round(selectedClip.audio.volume * 100)}%)</label>
-            <input
-              type="range"
-              min="0"
-              max="2.0"
-              step="0.05"
-              value={selectedClip.audio.volume}
-              onChange={(e) => updateClipAudio(selectedClip!.id, { volume: parseFloat(e.target.value) })}
-              className="w-full accent-green-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer mt-1"
-            />
-          </div>
+        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+          <button
+            onClick={() => toggleSection('audio')}
+            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+          >
+            <span>Audio Controls</span>
+            {openSections.audio ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {openSections.audio && (
+            <div className="p-3 space-y-3">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold text-gray-400">Volume ({Math.round(selectedClip.audio.volume * 100)}%)</span>
+                  <button
+                    onClick={() => resetProperty('volume')}
+                    className="text-[10px] text-gray-500 hover:text-green-400 flex items-center space-x-0.5"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    <span>Reset</span>
+                  </button>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="2.0"
+                  step="0.05"
+                  value={selectedClip.audio.volume}
+                  onChange={(e) => updateClipAudio(selectedClip!.id, { volume: parseFloat(e.target.value) })}
+                  className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </aside>

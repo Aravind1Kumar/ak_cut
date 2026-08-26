@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Scissors, Copy, Trash2, Bookmark, Download, Magnet, Layers, Smartphone, Monitor } from 'lucide-react';
+import { Search, Scissors, Copy, Trash2, Bookmark, Download, Magnet, Layers, Smartphone, Monitor, Undo2, Redo2, Type, Sparkles, VolumeX, Lock, Eye } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 
 interface CommandPaletteProps {
@@ -15,12 +15,23 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
     splitSelectedClip,
     duplicateSelectedClip,
     deleteSelectedClip,
+    copySelectedClip,
+    pasteClipAtPlayhead,
+    undo,
+    redo,
+    addTextClipDirectlyOnCanvas,
     addMarker,
     snappingEnabled,
     setSnappingEnabled,
     rippleDeleteEnabled,
     setRippleDeleteEnabled,
     setAspectRatio,
+    setZoomLevel,
+    zoomLevel,
+    tracks,
+    toggleTrackMute,
+    toggleTrackLocked,
+    toggleTrackHidden,
   } = useTimelineStore();
 
   useEffect(() => {
@@ -57,6 +68,24 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
       },
     },
     {
+      name: 'Copy Selected Clip',
+      shortcut: 'Ctrl+C',
+      icon: <Copy className="w-4 h-4 text-indigo-400" />,
+      action: () => {
+        copySelectedClip();
+        onClose();
+      },
+    },
+    {
+      name: 'Paste Clip at Playhead',
+      shortcut: 'Ctrl+V',
+      icon: <Copy className="w-4 h-4 text-purple-400" />,
+      action: () => {
+        pasteClipAtPlayhead();
+        onClose();
+      },
+    },
+    {
       name: 'Delete Selected Clip',
       shortcut: 'Delete',
       icon: <Trash2 className="w-4 h-4 text-red-400" />,
@@ -66,11 +95,56 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
       },
     },
     {
+      name: 'Undo Action',
+      shortcut: 'Ctrl+Z',
+      icon: <Undo2 className="w-4 h-4 text-amber-400" />,
+      action: () => {
+        undo();
+        onClose();
+      },
+    },
+    {
+      name: 'Redo Action',
+      shortcut: 'Ctrl+Shift+Z',
+      icon: <Redo2 className="w-4 h-4 text-amber-400" />,
+      action: () => {
+        redo();
+        onClose();
+      },
+    },
+    {
+      name: 'Add Text Directly on Canvas',
+      shortcut: 'Text',
+      icon: <Type className="w-4 h-4 text-cyan-400" />,
+      action: () => {
+        addTextClipDirectlyOnCanvas('Type here');
+        onClose();
+      },
+    },
+    {
       name: 'Add Timeline Marker',
       shortcut: 'M',
       icon: <Bookmark className="w-4 h-4 text-amber-400" />,
       action: () => {
         addMarker();
+        onClose();
+      },
+    },
+    {
+      name: 'Zoom In Timeline',
+      shortcut: 'Zoom +',
+      icon: <Sparkles className="w-4 h-4 text-cyan-400" />,
+      action: () => {
+        setZoomLevel(zoomLevel + 20);
+        onClose();
+      },
+    },
+    {
+      name: 'Zoom Out Timeline',
+      shortcut: 'Zoom -',
+      icon: <Sparkles className="w-4 h-4 text-blue-400" />,
+      action: () => {
+        setZoomLevel(zoomLevel - 20);
         onClose();
       },
     },
@@ -93,8 +167,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
       },
     },
     {
-      name: 'Set TikTok / Shorts Canvas (9:16)',
-      shortcut: 'Vertical',
+      name: 'Set TikTok / Shorts / Reels Canvas (9:16)',
+      shortcut: 'Vertical 9:16',
       icon: <Smartphone className="w-4 h-4 text-cyan-400" />,
       action: () => {
         setAspectRatio('9:16');
@@ -103,7 +177,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
     },
     {
       name: 'Set YouTube Canvas (16:9)',
-      shortcut: 'Landscape',
+      shortcut: 'Landscape 16:9',
       icon: <Monitor className="w-4 h-4 text-blue-400" />,
       action: () => {
         setAspectRatio('16:9');
@@ -111,8 +185,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
       },
     },
     {
+      name: 'Set Instagram Post Canvas (4:5)',
+      shortcut: 'Portrait 4:5',
+      icon: <Smartphone className="w-4 h-4 text-purple-400" />,
+      action: () => {
+        setAspectRatio('4:5');
+        onClose();
+      },
+    },
+    {
       name: 'Export Video Project',
-      shortcut: 'Export',
+      shortcut: 'Export MP4',
       icon: <Download className="w-4 h-4 text-emerald-400" />,
       action: () => {
         onClose();
@@ -132,7 +215,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
           <input
             type="text"
             autoFocus
-            placeholder="Type a command or shortcut (e.g. Split, Export, TikTok)..."
+            placeholder="Type a command or shortcut (e.g. Split, Export, TikTok, Copy)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full bg-transparent text-sm text-white placeholder-gray-500 outline-none"

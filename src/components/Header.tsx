@@ -1,19 +1,18 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Scissors,
   Download,
   Undo2,
   Redo2,
-  FolderOpen,
   Save,
   Monitor,
   Smartphone,
-  Layout,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Sparkles,
+  Edit3,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { AspectRatio } from '../types/timeline';
@@ -34,6 +33,8 @@ const SOCIAL_ASPECT_RATIOS: { label: string; ratio: AspectRatio; icon: string }[
 
 export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport }) => {
   const handleExport = onOpenExportModal || onOpenExport;
+  const [projectName, setProjectName] = useState('Untitled Project');
+  const [isEditingName, setIsEditingName] = useState(false);
 
   const {
     saveStatus,
@@ -49,11 +50,23 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
     redo,
     historyIndex,
     history,
+    saveProjectToDB,
   } = useTimelineStore();
+
+  useEffect(() => {
+    const savedName = localStorage.getItem('ak_cut_project_name');
+    if (savedName) setProjectName(savedName);
+  }, []);
+
+  const handleSaveName = () => {
+    localStorage.setItem('ak_cut_project_name', projectName);
+    setIsEditingName(false);
+    saveProjectToDB();
+  };
 
   return (
     <header className="h-14 bg-dark-900 border-b border-dark-700 px-4 flex items-center justify-between select-none z-30">
-      {/* Brand Logo & Title */}
+      {/* Brand Logo & Editable Project Name */}
       <div className="flex items-center space-x-3">
         <button
           onClick={toggleLeftPanel}
@@ -69,7 +82,31 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
           </div>
           <div>
             <div className="flex items-center space-x-2">
-              <h1 className="text-sm font-black text-white tracking-wide">AK CUT</h1>
+              {isEditingName ? (
+                <input
+                  type="text"
+                  autoFocus
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  onBlur={handleSaveName}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleSaveName();
+                  }}
+                  className="bg-dark-800 text-xs font-bold text-white px-2 py-0.5 border border-cyan-500 rounded outline-none"
+                />
+              ) : (
+                <div
+                  onClick={() => setIsEditingName(true)}
+                  className="flex items-center space-x-1.5 cursor-pointer group"
+                  title="Click to edit project name"
+                >
+                  <h1 className="text-sm font-black text-white tracking-wide group-hover:text-cyan-400 transition">
+                    {projectName}
+                  </h1>
+                  <Edit3 className="w-3 h-3 text-gray-500 group-hover:text-cyan-400 transition opacity-0 group-hover:opacity-100" />
+                </div>
+              )}
+
               <span className="text-[9px] font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5 rounded">
                 PRO 2.0
               </span>
@@ -104,7 +141,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
           </button>
         </div>
 
-        {/* Priority 4: Social Canvas Aspect Ratio Presets (16:9, 9:16, 4:5, 1:1) */}
+        {/* Social Canvas Aspect Ratio Presets Selector */}
         <div className="flex items-center space-x-1.5 bg-dark-800 px-2 py-1 rounded-xl border border-dark-700">
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
           <select
@@ -155,9 +192,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
         <button
           onClick={handleExport}
           className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/25 transition transform active:scale-95"
+          title="Export Video Project to MP4 (Render Final Video)"
         >
           <Download className="w-4 h-4" />
-          <span>Export Video</span>
+          <span>Export MP4</span>
         </button>
 
         <button
