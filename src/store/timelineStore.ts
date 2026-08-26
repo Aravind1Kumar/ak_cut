@@ -8,12 +8,14 @@ import {
   FilterProps,
   AudioProps,
   TextProps,
+  CaptionProps,
   MediaAsset,
   TransitionProps,
   ChromaKeyProps,
   MaskProps,
   SpeedCurveType,
   Keyframe,
+  TimelineMarker,
 } from '../types/timeline';
 import {
   saveProjectStateToIndexedDB,
@@ -78,8 +80,10 @@ interface TimelineState {
 
   mediaAssets: MediaAsset[];
   tracks: Track[];
+  markers: TimelineMarker[];
   selectedClipId: string | null;
-  copiedClip: Clip | null;
+  selectedClipIds: string[];
+  copiedClips: Clip[];
 
   history: Track[][];
   historyIndex: number;
@@ -99,14 +103,22 @@ interface TimelineState {
   setZoomLevel: (zoom: number) => void;
   setAspectRatio: (ratio: AspectRatio) => void;
   setSelectedClipId: (id: string | null) => void;
+  toggleSelectClipId: (id: string) => void;
+  setSelectedClipIds: (ids: string[]) => void;
+  clearSelection: () => void;
   setSnappingEnabled: (enabled: boolean) => void;
   setRippleDeleteEnabled: (enabled: boolean) => void;
+
+  // Timeline Markers
+  addMarker: (time?: number, label?: string, color?: string) => void;
+  removeMarker: (id: string) => void;
 
   addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>, fileBlob?: Blob) => string;
   deleteMediaAsset: (id: string) => void;
 
   addTrack: (type: MediaType, name?: string) => string;
   deleteTrack: (trackId: string) => void;
+  renameTrack: (trackId: string, name: string) => void;
   toggleTrackMute: (trackId: string) => void;
   toggleTrackHidden: (trackId: string) => void;
   toggleTrackLocked: (trackId: string) => void;
@@ -117,6 +129,7 @@ interface TimelineState {
   updateClipFilter: (clipId: string, filter: Partial<FilterProps>) => void;
   updateClipAudio: (clipId: string, audio: Partial<AudioProps>) => void;
   updateClipText: (clipId: string, text: Partial<TextProps>) => void;
+  updateClipCaption: (clipId: string, caption: Partial<CaptionProps>) => void;
   updateClipTransition: (clipId: string, transition: Partial<TransitionProps>) => void;
   updateClipChromaKey: (clipId: string, chromaKey: Partial<ChromaKeyProps>) => void;
   updateClipMask: (clipId: string, mask: Partial<MaskProps>) => void;
@@ -155,6 +168,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   isRightPanelOpen: true,
 
   mediaAssets: [],
+  markers: [],
   tracks: [
     {
       id: 'track-video-1',
@@ -186,7 +200,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   ],
 
   selectedClipId: null,
-  copiedClip: null,
+  selectedClipIds: [],
+  copiedClips: [],
   history: [],
   historyIndex: -1,
 
@@ -214,6 +229,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         maxTimelineDuration: state.maxTimelineDuration,
         tracks: state.tracks,
         mediaAssets: state.mediaAssets,
+        markers: state.markers,
       };
       await saveProjectStateToIndexedDB(projectData);
       set({ saveStatus: 'Saved' });
@@ -230,6 +246,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         maxTimelineDuration: rawState.maxTimelineDuration || 60,
         tracks: tracks || [],
         mediaAssets: mediaAssets || [],
+        markers: rawState.markers || [],
         saveStatus: 'Saved',
       });
     }
@@ -243,14 +260,43 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
-  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(200, zoom)) }),
+  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(400, zoom)) }),
   setAspectRatio: (ratio) => {
     set({ aspectRatio: ratio });
     get().saveProjectToDB();
   },
-  setSelectedClipId: (id) => set({ selectedClipId: id }),
+  setSelectedClipId: (id) => set({ selectedClipId: id, selectedClipIds: id ? [id] : [] }),
+  toggleSelectClipId: (id) => {
+    const { selectedClipIds } = get();
+    if (selectedClipIds.includes(id)) {
+      const next = selectedClipIds.filter((i) => i !== id);
+      set({ selectedClipIds: next, selectedClipId: next[next.length - 1] || null });
+    } else {
+      const next = [...selectedClipIds, id];
+      set({ selectedClipIds: next, selectedClipId: id });
+    }
+  },
+  setSelectedClipIds: (ids) => set({ selectedClipIds: ids, selectedClipId: ids[0] || null }),
+  clearSelection: () => set({ selectedClipId: null, selectedClipIds: [] }),
   setSnappingEnabled: (enabled) => set({ snappingEnabled: enabled }),
   setRippleDeleteEnabled: (enabled) => set({ rippleDeleteEnabled: enabled }),
+
+  addMarker: (time, label, color) => {
+    const markerTime = time ?? get().currentTime;
+    const newMarker: TimelineMarker = {
+      id: `marker-${Date.now()}`,
+      time: markerTime,
+      label: label || `Marker ${get().markers.length + 1}`,
+      color: color || '#00f2fe',
+    };
+    set((state) => ({ markers: [...state.markers, newMarker] }));
+    get().saveProjectToDB();
+  },
+
+  removeMarker: (id) => {
+    set((state) => ({ markers: state.markers.filter((m) => m.id !== id) }));
+    get().saveProjectToDB();
+  },
 
   addMediaAsset: (assetData, fileBlob) => {
     const id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
@@ -311,6 +357,13 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     get().saveProjectToDB();
   },
 
+  renameTrack: (trackId, name) => {
+    set((state) => ({
+      tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, name } : t)),
+    }));
+    get().saveProjectToDB();
+  },
+
   toggleTrackMute: (trackId) => {
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, muted: !t.muted } : t)),
@@ -352,6 +405,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       filter: { ...DEFAULT_FILTER, ...clipData.filter },
       audio: { ...DEFAULT_AUDIO, ...clipData.audio },
       text: clipData.text,
+      caption: clipData.caption,
       transition: clipData.transition || { type: 'none', duration: 0.5 },
       chromaKey: clipData.chromaKey || DEFAULT_CHROMA_KEY,
       mask: clipData.mask || DEFAULT_MASK,
@@ -361,6 +415,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, clips: [...t.clips, newClip] } : t)),
       selectedClipId: id,
+      selectedClipIds: [id],
     }));
 
     get().saveProjectToDB();
@@ -420,6 +475,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         ...track,
         clips: track.clips.map((clip) =>
           clip.id === clipId && clip.text ? { ...clip, text: { ...clip.text, ...text } } : clip
+        ),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
+  updateClipCaption: (clipId, caption) => {
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId && clip.caption ? { ...clip, caption: { ...clip.caption, ...caption } } : clip
         ),
       })),
     }));
@@ -554,35 +621,58 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   duplicateSelectedClip: () => {
-    const { selectedClipId, tracks } = get();
-    if (!selectedClipId) return;
+    const { selectedClipIds, tracks } = get();
+    if (selectedClipIds.length === 0) return;
 
-    for (const track of tracks) {
-      const clip = track.clips.find((c) => c.id === selectedClipId);
-      if (clip) {
-        get().pushHistory();
-        get().addClipToTrack(track.id, {
-          ...clip,
-          id: undefined,
-          startTime: clip.startTime + clip.duration + 0.5,
-        });
-        break;
+    get().pushHistory();
+    selectedClipIds.forEach((clipId) => {
+      for (const track of tracks) {
+        const clip = track.clips.find((c) => c.id === clipId);
+        if (clip) {
+          get().addClipToTrack(track.id, {
+            ...clip,
+            id: undefined,
+            startTime: clip.startTime + clip.duration + 0.2,
+          });
+          break;
+        }
       }
-    }
+    });
   },
 
   deleteSelectedClip: () => {
-    const { selectedClipId } = get();
-    if (!selectedClipId) return;
+    const { selectedClipIds, rippleDeleteEnabled, tracks } = get();
+    if (selectedClipIds.length === 0) return;
 
     get().pushHistory();
+
     set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.filter((clip) => clip.id !== selectedClipId),
-      })),
+      tracks: state.tracks.map((track) => {
+        const remainingClips = track.clips.filter((c) => !selectedClipIds.includes(c.id));
+        if (!rippleDeleteEnabled) return { ...track, clips: remainingClips };
+
+        // Ripple Delete Adjustment
+        let shift = 0;
+        const sorted = [...track.clips].sort((a, b) => a.startTime - b.startTime);
+        const rippledClips = sorted
+          .filter((c) => !selectedClipIds.includes(c.id))
+          .map((clip) => {
+            const deletedBefore = sorted.filter(
+              (dc) => selectedClipIds.includes(dc.id) && dc.startTime < clip.startTime
+            );
+            const totalDeletedDuration = deletedBefore.reduce((acc, dc) => acc + dc.duration, 0);
+            return {
+              ...clip,
+              startTime: Math.max(0, clip.startTime - totalDeletedDuration),
+            };
+          });
+
+        return { ...track, clips: rippledClips };
+      }),
       selectedClipId: null,
+      selectedClipIds: [],
     }));
+
     get().saveProjectToDB();
   },
 
@@ -616,30 +706,37 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   copySelectedClip: () => {
-    const { selectedClipId, tracks } = get();
-    if (!selectedClipId) return;
+    const { selectedClipIds, tracks } = get();
+    const clipsToCopy: Clip[] = [];
 
-    for (const track of tracks) {
-      const clip = track.clips.find((c) => c.id === selectedClipId);
-      if (clip) {
-        set({ copiedClip: { ...clip } });
-        break;
+    selectedClipIds.forEach((id) => {
+      for (const track of tracks) {
+        const clip = track.clips.find((c) => c.id === id);
+        if (clip) clipsToCopy.push({ ...clip });
       }
+    });
+
+    if (clipsToCopy.length > 0) {
+      set({ copiedClips: clipsToCopy });
     }
   },
 
   pasteClipAtPlayhead: () => {
-    const { copiedClip, currentTime, tracks } = get();
-    if (!copiedClip) return;
+    const { copiedClips, currentTime, tracks } = get();
+    if (copiedClips.length === 0) return;
 
     get().pushHistory();
-    let targetTrack = tracks.find((t) => t.type === copiedClip.type);
-    let targetTrackId = targetTrack?.id || get().addTrack(copiedClip.type);
+    const minStart = Math.min(...copiedClips.map((c) => c.startTime));
 
-    get().addClipToTrack(targetTrackId, {
-      ...copiedClip,
-      id: undefined,
-      startTime: currentTime,
+    copiedClips.forEach((clip) => {
+      const targetTrack = tracks.find((t) => t.type === clip.type) || tracks[0];
+      const offsetFromMin = clip.startTime - minStart;
+
+      get().addClipToTrack(targetTrack.id, {
+        ...clip,
+        id: undefined,
+        startTime: currentTime + offsetFromMin,
+      });
     });
   },
 

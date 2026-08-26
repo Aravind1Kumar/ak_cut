@@ -1,4 +1,4 @@
-export type MediaType = 'video' | 'audio' | 'text' | 'image';
+export type MediaType = 'video' | 'audio' | 'text' | 'image' | 'caption';
 
 export interface TransformProps {
   x: number;       // Percentage offset (-50 to +50)
@@ -86,6 +86,26 @@ export interface Keyframe {
   filter?: Partial<FilterProps>;
 }
 
+export interface TimelineMarker {
+  id: string;
+  time: number;
+  label: string;
+  color: string;
+}
+
+export interface CaptionWord {
+  word: string;
+  startTime: number;
+  endTime: number;
+}
+
+export interface CaptionProps {
+  text: string;
+  stylePreset: 'classic' | 'bold' | 'news' | 'social' | 'minimal' | 'karaoke' | 'impact' | 'subtitle';
+  speaker?: string;
+  words?: CaptionWord[];
+}
+
 export interface Clip {
   id: string;
   assetId?: string;     // Permanent asset ID in IndexedDB media_assets store
@@ -107,6 +127,7 @@ export interface Clip {
   filter: FilterProps;
   audio: AudioProps;
   text?: TextProps;
+  caption?: CaptionProps;
   transition?: TransitionProps;
   chromaKey?: ChromaKeyProps;
   mask?: MaskProps;

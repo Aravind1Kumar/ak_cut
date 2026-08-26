@@ -2,7 +2,6 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
   Scissors,
   Copy,
-  ClipboardPaste,
   Trash2,
   ZoomIn,
   ZoomOut,
@@ -18,13 +17,16 @@ import {
   Type,
   Image as ImageIcon,
   Magnet,
-  Layers,
   FileAudio,
   ArrowRightLeft,
+  Bookmark,
+  Layers,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track, MediaType } from '../types/timeline';
 import { extractAudioPeaks } from '../utils/audioWaveform';
+
+const ZOOM_PRESETS = [10, 25, 50, 75, 100, 150, 200, 400];
 
 export const Timeline: React.FC = () => {
   const timelineRef = useRef<HTMLDivElement | null>(null);
@@ -32,6 +34,7 @@ export const Timeline: React.FC = () => {
   const [trimmingClip, setTrimmingClip] = useState<{ id: string; edge: 'left' | 'right'; startX: number; originalStart: number; originalDuration: number } | null>(null);
   const [isScrubbingPlayhead, setIsScrubbingPlayhead] = useState(false);
   const [clipWaveforms, setClipWaveforms] = useState<Record<string, number[]>>({});
+  const [isShiftPressed, setIsShiftPressed] = useState(false);
 
   // Context Menu State
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
@@ -42,11 +45,19 @@ export const Timeline: React.FC = () => {
     maxTimelineDuration,
     zoomLevel,
     selectedClipId,
+    selectedClipIds,
     snappingEnabled,
+    rippleDeleteEnabled,
+    markers,
     setCurrentTime,
     setZoomLevel,
     setSelectedClipId,
+    toggleSelectClipId,
+    clearSelection,
     setSnappingEnabled,
+    setRippleDeleteEnabled,
+    addMarker,
+    removeMarker,
     addTrack,
     deleteTrack,
     toggleTrackMute,
@@ -57,7 +68,60 @@ export const Timeline: React.FC = () => {
     duplicateSelectedClip,
     deleteSelectedClip,
     detachAudioFromSelectedClip,
+    getProjectDuration,
   } = useTimelineStore();
+
+  // Shift Key Snapping Bypass & Frame Navigation Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore shortcuts if user is typing inside input/textarea/contenteditable
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+
+      if (e.key === 'Shift') {
+        setIsShiftPressed(true);
+      }
+
+      const fps = 30;
+      const frameTime = 1 / fps;
+
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const step = e.shiftKey ? frameTime * 10 : frameTime;
+        setCurrentTime(Math.max(0, currentTime - step));
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const step = e.shiftKey ? frameTime * 10 : frameTime;
+        setCurrentTime(currentTime + step);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        setCurrentTime(0);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        setCurrentTime(getProjectDuration());
+      } else if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        addMarker();
+      } else if (e.key === 'Escape') {
+        clearSelection();
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') {
+        setIsShiftPressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [currentTime, getProjectDuration]);
 
   // Extract PCM Waveforms for Audio / Video Clips
   useEffect(() => {
@@ -79,7 +143,7 @@ export const Timeline: React.FC = () => {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  // Throttled Playhead Scrubbing without lag
+  // Scrubbing Playhead
   const updateScrubPosition = (clientX: number) => {
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
@@ -101,11 +165,17 @@ export const Timeline: React.FC = () => {
     setContextMenu({ x: e.clientX, y: e.clientY, clipId });
   };
 
-  // Mouse & Touch Drag / Trim Handlers
+  // Drag / Trim Handlers with Magnet Snapping
   const handleClipMouseDown = (e: React.MouseEvent, clip: Clip, track: Track) => {
     if (track.locked) return;
     e.stopPropagation();
-    setSelectedClipId(clip.id);
+
+    if (e.ctrlKey || e.metaKey) {
+      toggleSelectClipId(clip.id);
+    } else {
+      setSelectedClipId(clip.id);
+    }
+
     setDraggingClip({
       id: clip.id,
       startX: e.clientX,
@@ -134,8 +204,26 @@ export const Timeline: React.FC = () => {
       let deltaTime = deltaX / zoomLevel;
       let newStart = Math.max(0, draggingClip.originalStart + deltaTime);
 
-      if (snappingEnabled && Math.abs(newStart - currentTime) < 0.2) {
-        newStart = currentTime;
+      // Intelligent Magnet Snapping (Bypassed if Shift key pressed)
+      const effectiveSnapping = snappingEnabled && !isShiftPressed;
+      if (effectiveSnapping) {
+        // Snap targets: 0s, playhead, markers, other clip edges
+        const snapTargets = [0, currentTime, ...markers.map((m) => m.time)];
+        tracks.forEach((t) => {
+          t.clips.forEach((c) => {
+            if (c.id !== draggingClip.id) {
+              snapTargets.push(c.startTime);
+              snapTargets.push(c.startTime + c.duration);
+            }
+          });
+        });
+
+        for (const target of snapTargets) {
+          if (Math.abs(newStart - target) < 0.2) {
+            newStart = target;
+            break;
+          }
+        }
       }
 
       updateClip(draggingClip.id, { startTime: newStart });
@@ -167,6 +255,7 @@ export const Timeline: React.FC = () => {
       case 'audio':
         return <Music className="w-3.5 h-3.5 text-green-400 shrink-0" />;
       case 'text':
+      case 'caption':
         return <Type className="w-3.5 h-3.5 text-purple-400 shrink-0" />;
       case 'image':
         return <ImageIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />;
@@ -174,7 +263,7 @@ export const Timeline: React.FC = () => {
   };
 
   const totalRulerWidth = maxTimelineDuration * zoomLevel;
-  const timeStep = zoomLevel > 60 ? 1 : zoomLevel > 30 ? 5 : 10;
+  const timeStep = zoomLevel > 100 ? 1 : zoomLevel > 40 ? 5 : 10;
   const rulerTicks = [];
   for (let i = 0; i <= maxTimelineDuration; i += timeStep) {
     rulerTicks.push(i);
@@ -188,9 +277,9 @@ export const Timeline: React.FC = () => {
       onMouseLeave={handleMouseUp}
     >
       {/* Timeline Toolbar Bar */}
-      <div className="h-10 bg-dark-900/60 border-b border-dark-700 px-4 flex items-center justify-between">
+      <div className="h-10 bg-dark-900/60 border-b border-dark-700 px-4 flex items-center justify-between overflow-x-auto scrollbar-none">
         {/* Editing Tools */}
-        <div className="flex items-center space-x-1">
+        <div className="flex items-center space-x-1 shrink-0">
           <button
             onClick={splitSelectedClip}
             title="Split Clip at Playhead (S)"
@@ -227,12 +316,24 @@ export const Timeline: React.FC = () => {
             <span>Delete</span>
           </button>
 
-          <div className="h-4 w-[1px] bg-dark-700 mx-2" />
+          <div className="h-4 w-[1px] bg-dark-700 mx-1.5" />
+
+          {/* Add Marker Shortcut */}
+          <button
+            onClick={() => addMarker()}
+            title="Add Timeline Marker at Playhead (M)"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-amber-400 rounded-md text-xs font-semibold transition"
+          >
+            <Bookmark className="w-3.5 h-3.5" />
+            <span>Marker (M)</span>
+          </button>
+
+          <div className="h-4 w-[1px] bg-dark-700 mx-1.5" />
 
           {/* Magnet Snapping Toggle */}
           <button
             onClick={() => setSnappingEnabled(!snappingEnabled)}
-            title="Toggle Magnet Snapping"
+            title="Toggle Magnet Snapping (Hold Shift to bypass)"
             className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold transition ${
               snappingEnabled
                 ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
@@ -243,35 +344,51 @@ export const Timeline: React.FC = () => {
             <span>Snap</span>
           </button>
 
-          <div className="h-4 w-[1px] bg-dark-700 mx-2" />
+          {/* Ripple Delete Toggle */}
+          <button
+            onClick={() => setRippleDeleteEnabled(!rippleDeleteEnabled)}
+            title="Toggle Ripple Delete (shift clips left upon delete)"
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold transition ${
+              rippleDeleteEnabled
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                : 'bg-dark-700/60 text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Ripple</span>
+          </button>
+        </div>
 
-          {/* Add Track Shortcuts */}
-          <div className="flex items-center space-x-1">
-            <span className="text-[11px] font-semibold text-gray-500 mr-1">+ Track:</span>
-            {(['video', 'audio', 'text'] as MediaType[]).map((t) => (
+        {/* Timeline Zoom Presets & Slider */}
+        <div className="flex items-center space-x-2 shrink-0">
+          <div className="hidden lg:flex items-center space-x-1 bg-dark-900/80 p-0.5 rounded-lg border border-dark-700 text-[10px]">
+            {ZOOM_PRESETS.map((preset) => (
               <button
-                key={t}
-                onClick={() => addTrack(t)}
-                className="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-dark-700/40 hover:bg-dark-700 text-gray-300 transition"
+                key={preset}
+                onClick={() => setZoomLevel(preset)}
+                className={`px-1.5 py-0.5 rounded transition ${
+                  Math.abs(zoomLevel - preset) < 5
+                    ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/40'
+                    : 'text-gray-400 hover:text-gray-200'
+                }`}
               >
-                {t}
+                {preset}%
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Timeline Zoom Controls */}
-        <div className="flex items-center space-x-2">
-          <ZoomOut className="w-3.5 h-3.5 text-gray-400" />
-          <input
-            type="range"
-            min="10"
-            max="150"
-            value={zoomLevel}
-            onChange={(e) => setZoomLevel(parseInt(e.target.value))}
-            className="w-24 accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
-          />
-          <ZoomIn className="w-3.5 h-3.5 text-gray-400" />
+          <div className="flex items-center space-x-1">
+            <ZoomOut className="w-3.5 h-3.5 text-gray-400" />
+            <input
+              type="range"
+              min="10"
+              max="400"
+              value={zoomLevel}
+              onChange={(e) => setZoomLevel(parseInt(e.target.value))}
+              className="w-20 sm:w-24 accent-cyan-400 bg-dark-900 rounded-lg cursor-pointer h-1.5"
+            />
+            <ZoomIn className="w-3.5 h-3.5 text-gray-400" />
+          </div>
         </div>
       </div>
 
@@ -353,7 +470,7 @@ export const Timeline: React.FC = () => {
             <div className="w-3 h-3 bg-red-500 transform -translate-x-[5px] rotate-45 rounded-sm shadow-md" />
           </div>
 
-          {/* Time Ruler */}
+          {/* Time Ruler & Timeline Markers */}
           <div
             className="h-7 border-b border-dark-700 bg-dark-900/60 relative cursor-pointer"
             style={{ width: `${totalRulerWidth}px` }}
@@ -365,6 +482,23 @@ export const Timeline: React.FC = () => {
                 style={{ left: `${sec * zoomLevel}px` }}
               >
                 {sec}s
+              </div>
+            ))}
+
+            {/* Persistent Markers on Ruler */}
+            {markers.map((marker) => (
+              <div
+                key={marker.id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeMarker(marker.id);
+                }}
+                className="absolute top-0 z-20 flex items-center space-x-1 bg-amber-500 text-black px-1.5 py-0.5 rounded-b text-[9px] font-bold shadow-md cursor-pointer hover:bg-amber-400 transition"
+                style={{ left: `${marker.time * zoomLevel}px` }}
+                title={`Click to remove marker: ${marker.label}`}
+              >
+                <Bookmark className="w-2.5 h-2.5 fill-current" />
+                <span>{marker.label}</span>
               </div>
             ))}
           </div>
@@ -381,7 +515,7 @@ export const Timeline: React.FC = () => {
                 {track.clips.map((clip) => {
                   const clipLeft = clip.startTime * zoomLevel;
                   const clipWidth = clip.duration * zoomLevel;
-                  const isSelected = clip.id === selectedClipId;
+                  const isSelected = selectedClipIds.includes(clip.id);
                   const hasTransition = clip.transition && clip.transition.type !== 'none';
                   const peaks = clipWaveforms[clip.id];
 
@@ -480,7 +614,7 @@ export const Timeline: React.FC = () => {
             className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
           >
             <Copy className="w-3.5 h-3.5" />
-            <span>Duplicate Clip</span>
+            <span>Duplicate Clip (Ctrl+D)</span>
           </button>
           <button
             onClick={detachAudioFromSelectedClip}
