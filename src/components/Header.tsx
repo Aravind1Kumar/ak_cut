@@ -26,9 +26,10 @@ interface HeaderProps {
 const SOCIAL_ASPECT_RATIOS: { label: string; ratio: AspectRatio; icon: string }[] = [
   { label: 'YouTube (16:9)', ratio: '16:9', icon: '🎬' },
   { label: 'Shorts / Reels / TikTok (9:16)', ratio: '9:16', icon: '📱' },
-  { label: 'Instagram Post (4:5)', ratio: '4:3', icon: '📸' },
+  { label: 'Instagram Post (4:5)', ratio: '4:5', icon: '📸' },
   { label: 'Square (1:1)', ratio: '1:1', icon: '⬛' },
-  { label: 'Widescreen (21:9)', ratio: '21:9', icon: '🎥' },
+  { label: 'Standard (4:3)', ratio: '4:3', icon: '📺' },
+  { label: 'Widescreen Cinema (21:9)', ratio: '21:9', icon: '🎥' },
 ];
 
 export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport }) => {
@@ -103,7 +104,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
           </button>
         </div>
 
-        {/* Social Canvas Aspect Ratio Presets Selector */}
+        {/* Priority 4: Social Canvas Aspect Ratio Presets (16:9, 9:16, 4:5, 1:1) */}
         <div className="flex items-center space-x-1.5 bg-dark-800 px-2 py-1 rounded-xl border border-dark-700">
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
           <select

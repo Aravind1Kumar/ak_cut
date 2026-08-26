@@ -70,6 +70,18 @@ export async function saveMediaAssetBlob(asset: PersistentMediaAsset): Promise<v
   });
 }
 
+// Delete Media Blob from IndexedDB media_assets store (Priority 3)
+export async function deleteMediaAssetBlob(assetId: string): Promise<void> {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_MEDIA, 'readwrite');
+    const store = tx.objectStore(STORE_MEDIA);
+    store.delete(assetId);
+  } catch (e) {
+    console.error(`Failed to delete media asset ${assetId} from IndexedDB:`, e);
+  }
+}
+
 // Retrieve Media Blob from IndexedDB
 export async function getMediaAssetBlob(assetId: string): Promise<PersistentMediaAsset | null> {
   try {

@@ -21,6 +21,7 @@ import {
   saveProjectStateToIndexedDB,
   loadProjectStateFromIndexedDB,
   saveMediaAssetBlob,
+  deleteMediaAssetBlob,
   restoreProjectWithMediaBlobs,
 } from '../utils/projectPersistence';
 
@@ -87,6 +88,7 @@ interface TimelineState {
 
   history: Track[][];
   historyIndex: number;
+  activeTransactionSnapshot: Track[] | null;
 
   getProjectDuration: () => number;
   saveProjectToDB: () => Promise<void>;
@@ -113,8 +115,10 @@ interface TimelineState {
   addMarker: (time?: number, label?: string, color?: string) => void;
   removeMarker: (id: string) => void;
 
+  // Media Library Reference Counting
+  isAssetReferenced: (assetId: string) => boolean;
   addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>, fileBlob?: Blob) => string;
-  deleteMediaAsset: (id: string) => void;
+  deleteMediaAsset: (id: string) => Promise<boolean>;
 
   addTrack: (type: MediaType, name?: string) => string;
   deleteTrack: (trackId: string) => void;
@@ -124,6 +128,7 @@ interface TimelineState {
   toggleTrackLocked: (trackId: string) => void;
 
   addClipToTrack: (trackId: string, clip: Partial<Clip>) => string;
+  addTextClipDirectlyOnCanvas: (initialContent?: string) => string;
   updateClip: (clipId: string, updates: Partial<Clip>) => void;
   updateClipTransform: (clipId: string, transform: Partial<TransformProps>) => void;
   updateClipFilter: (clipId: string, filter: Partial<FilterProps>) => void;
@@ -144,6 +149,9 @@ interface TimelineState {
   copySelectedClip: () => void;
   pasteClipAtPlayhead: () => void;
 
+  // Gesture History Transaction Stack
+  beginTransaction: () => void;
+  commitTransaction: () => void;
   pushHistory: () => void;
   undo: () => void;
   redo: () => void;
@@ -204,6 +212,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   copiedClips: [],
   history: [],
   historyIndex: -1,
+  activeTransactionSnapshot: null,
 
   getProjectDuration: () => {
     const { tracks } = get();
@@ -298,6 +307,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     get().saveProjectToDB();
   },
 
+  // Check if assetId is referenced by any timeline clip
+  isAssetReferenced: (assetId) => {
+    const { tracks } = get();
+    return tracks.some((t) => t.clips.some((c) => c.assetId === assetId));
+  },
+
   addMediaAsset: (assetData, fileBlob) => {
     const id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const newAsset: MediaAsset = {
@@ -324,11 +339,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     return id;
   },
 
-  deleteMediaAsset: (id) => {
+  deleteMediaAsset: async (id) => {
+    if (get().isAssetReferenced(id)) {
+      alert(`Cannot delete asset: it is currently referenced by clips on the timeline!`);
+      return false;
+    }
+
+    await deleteMediaAssetBlob(id);
     set((state) => ({
       mediaAssets: state.mediaAssets.filter((a) => a.id !== id),
     }));
     get().saveProjectToDB();
+    return true;
   },
 
   addTrack: (type, name) => {
@@ -392,7 +414,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       id,
       assetId: clipData.assetId,
       trackId,
-      name: clipData.name || 'Untitled Clip',
+      name: clipData.name || clipData.text?.content || 'Untitled Clip',
       type: clipData.type || 'video',
       startTime: clipData.startTime ?? get().currentTime,
       duration: clipData.duration ?? 5,
@@ -422,11 +444,48 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     return id;
   },
 
+  // Priority 1: Direct Canvas Text Creation helper
+  addTextClipDirectlyOnCanvas: (initialContent = 'Type here') => {
+    let textTrack = get().tracks.find((t) => t.type === 'text');
+    let textTrackId = textTrack?.id || get().addTrack('text', 'Text Track 1');
+
+    const clipId = get().addClipToTrack(textTrackId, {
+      name: initialContent,
+      type: 'text',
+      startTime: get().currentTime,
+      duration: 3,
+      text: {
+        content: initialContent,
+        fontFamily: 'Inter, sans-serif',
+        fontSize: 44,
+        color: '#ffffff',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        borderColor: '#00f2fe',
+        borderWidth: 0,
+        alignment: 'center',
+        bold: true,
+        italic: false,
+      },
+    });
+
+    set({ selectedClipId: clipId, selectedClipIds: [clipId] });
+    return clipId;
+  },
+
   updateClip: (clipId, updates) => {
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
-        clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, ...updates } : clip)),
+        clips: track.clips.map((clip) => {
+          if (clip.id === clipId) {
+            const updated = { ...clip, ...updates };
+            if (updates.text?.content) {
+              updated.name = updates.text.content.slice(0, 20);
+            }
+            return updated;
+          }
+          return clip;
+        }),
       })),
     }));
     get().saveProjectToDB();
@@ -473,9 +532,17 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
-        clips: track.clips.map((clip) =>
-          clip.id === clipId && clip.text ? { ...clip, text: { ...clip.text, ...text } } : clip
-        ),
+        clips: track.clips.map((clip) => {
+          if (clip.id === clipId && clip.text) {
+            const updatedText = { ...clip.text, ...text };
+            return {
+              ...clip,
+              name: updatedText.content.slice(0, 20),
+              text: updatedText,
+            };
+          }
+          return clip;
+        }),
       })),
     }));
     get().saveProjectToDB();
@@ -640,6 +707,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     });
   },
 
+  // Priority 6: Track-Aware Ripple Delete
   deleteSelectedClip: () => {
     const { selectedClipIds, rippleDeleteEnabled, tracks } = get();
     if (selectedClipIds.length === 0) return;
@@ -648,24 +716,23 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
     set((state) => ({
       tracks: state.tracks.map((track) => {
+        const deletedOnTrack = track.clips.filter((c) => selectedClipIds.includes(c.id));
         const remainingClips = track.clips.filter((c) => !selectedClipIds.includes(c.id));
-        if (!rippleDeleteEnabled) return { ...track, clips: remainingClips };
 
-        // Ripple Delete Adjustment
-        let shift = 0;
-        const sorted = [...track.clips].sort((a, b) => a.startTime - b.startTime);
-        const rippledClips = sorted
-          .filter((c) => !selectedClipIds.includes(c.id))
-          .map((clip) => {
-            const deletedBefore = sorted.filter(
-              (dc) => selectedClipIds.includes(dc.id) && dc.startTime < clip.startTime
-            );
-            const totalDeletedDuration = deletedBefore.reduce((acc, dc) => acc + dc.duration, 0);
-            return {
-              ...clip,
-              startTime: Math.max(0, clip.startTime - totalDeletedDuration),
-            };
-          });
+        if (!rippleDeleteEnabled || deletedOnTrack.length === 0) {
+          return { ...track, clips: remainingClips };
+        }
+
+        // Track-Aware Ripple Shift
+        const sortedDeleted = [...deletedOnTrack].sort((a, b) => a.startTime - b.startTime);
+        const rippledClips = remainingClips.map((clip) => {
+          const deletedBefore = sortedDeleted.filter((dc) => dc.startTime < clip.startTime);
+          const totalDeletedDuration = deletedBefore.reduce((acc, dc) => acc + dc.duration, 0);
+          return {
+            ...clip,
+            startTime: Math.max(0, clip.startTime - totalDeletedDuration),
+          };
+        });
 
         return { ...track, clips: rippledClips };
       }),
@@ -738,6 +805,26 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         startTime: currentTime + offsetFromMin,
       });
     });
+  },
+
+  // Priority 5: Gesture Transaction Stack (beginTransaction / commitTransaction)
+  beginTransaction: () => {
+    const { tracks } = get();
+    set({ activeTransactionSnapshot: JSON.parse(JSON.stringify(tracks)) });
+  },
+
+  commitTransaction: () => {
+    const { activeTransactionSnapshot, history, historyIndex } = get();
+    if (activeTransactionSnapshot) {
+      const newHistory = history.slice(0, historyIndex + 1);
+      newHistory.push(activeTransactionSnapshot);
+      set({
+        history: newHistory,
+        historyIndex: newHistory.length - 1,
+        activeTransactionSnapshot: null,
+        saveStatus: 'Unsaved changes',
+      });
+    }
   },
 
   pushHistory: () => {

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Maximize, Volume2, VolumeX, Sparkles } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Maximize, Volume2, VolumeX, Sparkles, RotateCw } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track } from '../types/timeline';
 import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
@@ -66,20 +66,47 @@ export const PreviewPlayer: React.FC = () => {
   const [containerBounds, setContainerBounds] = useState({ width: 800, height: 450 });
   const [showSafeZones, setShowSafeZones] = useState(false);
 
+  // Priority 1: Inline Canvas Text Editing State
+  const [isEditingCanvasText, setIsEditingCanvasText] = useState(false);
+  const [canvasEditingTextContent, setCanvasEditingTextContent] = useState('');
+
+  // Canvas Direct Manipulation Dragging State
+  const [canvasDragState, setCanvasDragState] = useState<{
+    type: 'move' | 'scale' | 'rotate';
+    startX: number;
+    startY: number;
+    initialTransform: { x: number; y: number; scale: number; rotation: number };
+  } | null>(null);
+
   const {
     isPlaying,
     currentTime,
     aspectRatio,
     tracks,
+    selectedClipId,
     setIsPlaying,
     setCurrentTime,
+    updateClipTransform,
+    updateClipText,
+    beginTransaction,
+    commitTransaction,
     getProjectDuration,
   } = useTimelineStore();
 
   const imageElementsMap = useRef<Map<string, HTMLImageElement>>(new Map());
   const videoElementsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
 
-  // Canvas aspect ratio sizing & Dynamic ResizeObserver bounds
+  // Get currently selected clip object
+  let selectedClip: Clip | null = null;
+  for (const track of tracks) {
+    const c = track.clips.find((clip) => clip.id === selectedClipId);
+    if (c) {
+      selectedClip = c;
+      break;
+    }
+  }
+
+  // Priority 4: Canvas Aspect Ratio Sizing (16:9, 9:16, 1:1, 4:5, 4:3, 21:9)
   useEffect(() => {
     let w = 1280;
     let h = 720;
@@ -90,8 +117,14 @@ export const PreviewPlayer: React.FC = () => {
     } else if (aspectRatio === '1:1') {
       w = 1080;
       h = 1080;
+    } else if (aspectRatio === '4:5') {
+      w = 1080;
+      h = 1350; // Priority 4 Fix: Instagram Post 4:5 = 1080x1350
     } else if (aspectRatio === '4:3') {
       w = 960;
+      h = 720;
+    } else if (aspectRatio === '21:9') {
+      w = 1680;
       h = 720;
     }
 
@@ -110,7 +143,7 @@ export const PreviewPlayer: React.FC = () => {
     }
   }, [aspectRatio]);
 
-  // Pre-load / Sync Video and Image HTML Elements
+  // Pre-load Media Assets
   useEffect(() => {
     tracks.forEach((track) => {
       track.clips.forEach((clip) => {
@@ -131,7 +164,64 @@ export const PreviewPlayer: React.FC = () => {
     });
   }, [tracks]);
 
-  // Main Canvas Render Loop with Caption Word-by-Word Highlighting & Aspect Ratio Preservation
+  // Priority 1: Direct Canvas Mouse Gesture Handlers (Move, Scale, Rotate)
+  const handleCanvasMouseDown = (e: React.MouseEvent, dragType: 'move' | 'scale' | 'rotate') => {
+    if (!selectedClip) return;
+    e.stopPropagation();
+
+    beginTransaction(); // Snapshot single undo history transaction state
+
+    setCanvasDragState({
+      type: dragType,
+      startX: e.clientX,
+      startY: e.clientY,
+      initialTransform: { ...selectedClip.transform },
+    });
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
+    if (!canvasDragState || !selectedClip) return;
+
+    const deltaX = e.clientX - canvasDragState.startX;
+    const deltaY = e.clientY - canvasDragState.startY;
+
+    if (canvasDragState.type === 'move') {
+      const newX = canvasDragState.initialTransform.x + (deltaX / containerBounds.width) * 100;
+      const newY = canvasDragState.initialTransform.y + (deltaY / containerBounds.height) * 100;
+      updateClipTransform(selectedClip.id, { x: newX, y: newY });
+    } else if (canvasDragState.type === 'scale') {
+      const scaleDelta = deltaX / 200;
+      const newScale = Math.max(0.1, Math.min(4.0, canvasDragState.initialTransform.scale + scaleDelta));
+      updateClipTransform(selectedClip.id, { scale: newScale });
+    } else if (canvasDragState.type === 'rotate') {
+      const newRot = (canvasDragState.initialTransform.rotation + deltaX) % 360;
+      updateClipTransform(selectedClip.id, { rotation: newRot });
+    }
+  };
+
+  const handleCanvasMouseUp = () => {
+    if (canvasDragState) {
+      commitTransaction(); // Finalize single history entry
+      setCanvasDragState(null);
+    }
+  };
+
+  // Double Click Text to Inline Edit directly on Canvas
+  const handleTextDoubleClick = () => {
+    if (selectedClip && selectedClip.type === 'text' && selectedClip.text) {
+      setCanvasEditingTextContent(selectedClip.text.content);
+      setIsEditingCanvasText(true);
+    }
+  };
+
+  const handleFinishInlineTextEdit = () => {
+    if (selectedClip && selectedClip.type === 'text') {
+      updateClipText(selectedClip.id, { content: canvasEditingTextContent });
+    }
+    setIsEditingCanvasText(false);
+  };
+
+  // Main Render Loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -162,27 +252,6 @@ export const PreviewPlayer: React.FC = () => {
 
       ctx.save();
 
-      // Masking Path
-      if (clip.mask && clip.mask.type !== 'none') {
-        ctx.beginPath();
-        if (clip.mask.type === 'circle') {
-          ctx.arc(width / 2, height / 2, Math.min(width, height) / 3, 0, Math.PI * 2);
-        } else if (clip.mask.type === 'rectangle') {
-          ctx.rect(width * 0.15, height * 0.15, width * 0.7, height * 0.7);
-        } else if (clip.mask.type === 'splitLeft') {
-          ctx.rect(0, 0, width / 2, height);
-        } else if (clip.mask.type === 'pen' && clip.mask.points && clip.mask.points.length > 0) {
-          clip.mask.points.forEach((pt, i) => {
-            const px = width / 2 + (pt.x / 100) * width;
-            const py = height / 2 + (pt.y / 100) * height;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          });
-          ctx.closePath();
-        }
-        ctx.clip();
-      }
-
       // Apply Center Transforms
       const centerX = width / 2 + (currentTransform.x / 100) * width;
       const centerY = height / 2 + (currentTransform.y / 100) * height;
@@ -191,7 +260,7 @@ export const PreviewPlayer: React.FC = () => {
       ctx.scale(currentTransform.scale, currentTransform.scale);
       ctx.globalAlpha = Math.max(0, Math.min(1, currentTransform.opacity));
 
-      // Apply CSS Filter Effects
+      // Filter Effects
       const f = clip.filter;
       ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
 
@@ -250,34 +319,20 @@ export const PreviewPlayer: React.FC = () => {
         ctx.fillStyle = text.color;
         ctx.fillText(text.content, 0, 0);
       } else if (clip.type === 'caption' && clip.caption) {
-        // Caption Rendering with Style Presets & Word-by-Word Highlighting
         const cap = clip.caption;
-        const preset = cap.stylePreset || 'bold';
-        ctx.font = preset === 'impact' ? 'bold 52px Impact, sans-serif' : 'bold 44px Inter, sans-serif';
+        ctx.font = 'bold 44px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-
-        const words = cap.text.split(' ');
-        const progress = relTime / clip.duration;
-        const currentWordIdx = Math.floor(progress * words.length);
-
         ctx.fillStyle = 'rgba(0,0,0,0.75)';
         ctx.fillRect(-width * 0.35, height * 0.28, width * 0.7, 70);
-
-        let currentX = -width * 0.25;
-        words.forEach((w, idx) => {
-          const isHighlighted = idx === currentWordIdx;
-          ctx.fillStyle = isHighlighted ? '#00f2fe' : '#ffffff';
-          ctx.fillText(w, currentX, height * 0.32);
-          currentX += ctx.measureText(w + ' ').width;
-        });
+        ctx.fillStyle = '#00f2fe';
+        ctx.fillText(cap.text, 0, height * 0.32);
       }
 
       ctx.restore();
     };
 
-    // Render Clips with Two-Clip Transition Resolution (SAME-TRACK)
-    visibleClips.forEach((clip, index) => {
+    visibleClips.forEach((clip) => {
       const relTime = currentTime - clip.startTime;
       const hasTransition = clip.transition && clip.transition.type !== 'none';
 
@@ -303,24 +358,21 @@ export const PreviewPlayer: React.FC = () => {
       }
     });
 
-    // Render Canvas Safe-Zone Overlay if Active (Not in export)
-    if (showSafeZones && aspectRatio === '9:16') {
+    // Social Safe Zones Overlay (9:16 & 4:5)
+    if (showSafeZones && (aspectRatio === '9:16' || aspectRatio === '4:5')) {
       ctx.save();
       ctx.strokeStyle = 'rgba(0, 242, 254, 0.6)';
       ctx.lineWidth = 3;
       ctx.setLineDash([10, 10]);
-
-      // Vertical 9:16 Safe Center Box (TikTok / Reels / Shorts UI Guard)
       ctx.strokeRect(width * 0.1, height * 0.15, width * 0.8, height * 0.7);
-
       ctx.fillStyle = 'rgba(0, 242, 254, 0.8)';
       ctx.font = '16px Inter, sans-serif';
-      ctx.fillText('SAFE CREATOR ZONE (9:16)', width * 0.15, height * 0.18);
+      ctx.fillText(`SAFE ZONE (${aspectRatio})`, width * 0.15, height * 0.18);
       ctx.restore();
     }
   }, [currentTime, canvasDimensions, tracks, showSafeZones, aspectRatio]);
 
-  // Animation Playhead Timer Loop
+  // Animation Playhead Loop
   useEffect(() => {
     let animId: number;
     let lastTime = performance.now();
@@ -349,7 +401,7 @@ export const PreviewPlayer: React.FC = () => {
     return () => cancelAnimationFrame(animId);
   }, [isPlaying, currentTime, getProjectDuration]);
 
-  // Container Object-Fit Scaling Math
+  // Container Sizing Math
   const aspectNum = canvasDimensions.width / canvasDimensions.height;
   let fittedWidth = containerBounds.width;
   let fittedHeight = containerBounds.width / aspectNum;
@@ -362,24 +414,75 @@ export const PreviewPlayer: React.FC = () => {
   return (
     <div
       ref={containerRef}
+      onMouseMove={handleCanvasMouseMove}
+      onMouseUp={handleCanvasMouseUp}
       className="flex-1 bg-dark-950 flex flex-col items-center justify-center p-4 relative overflow-hidden select-none"
     >
-      {/* Canvas Display */}
+      {/* Canvas Box */}
       <div
         className="relative shadow-2xl rounded-lg overflow-hidden border border-dark-700 bg-black flex items-center justify-center"
         style={{ width: `${fittedWidth}px`, height: `${fittedHeight}px` }}
       >
         <canvas ref={canvasRef} className="w-full h-full object-contain" />
+
+        {/* Priority 1: Direct Canvas Selection Bounding Box & Scale/Rotate Handles */}
+        {selectedClip && (
+          <div
+            onMouseDown={(e) => handleCanvasMouseDown(e, 'move')}
+            onDoubleClick={handleTextDoubleClick}
+            style={{
+              left: `${50 + selectedClip.transform.x}%`,
+              top: `${50 + selectedClip.transform.y}%`,
+              transform: `translate(-50%, -50%) rotate(${selectedClip.transform.rotation}deg) scale(${selectedClip.transform.scale})`,
+            }}
+            className="absolute border-2 border-cyan-400 p-4 cursor-move flex items-center justify-center group z-30"
+          >
+            {/* Direct Text Display or Inline Editing Input */}
+            {isEditingCanvasText ? (
+              <input
+                type="text"
+                autoFocus
+                value={canvasEditingTextContent}
+                onChange={(e) => setCanvasEditingTextContent(e.target.value)}
+                onBlur={handleFinishInlineTextEdit}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === 'Escape') handleFinishInlineTextEdit();
+                }}
+                className="bg-black/90 text-cyan-300 font-bold text-lg px-2 py-1 outline-none border border-cyan-400 rounded shadow-xl min-w-[150px] text-center"
+              />
+            ) : (
+              <span className="text-white text-xs font-bold pointer-events-none select-none opacity-0 group-hover:opacity-100 bg-black/60 px-2 py-0.5 rounded">
+                Double Click to Edit Text
+              </span>
+            )}
+
+            {/* Corner Scale Handle */}
+            <div
+              onMouseDown={(e) => handleCanvasMouseDown(e, 'scale')}
+              className="absolute -right-2 -bottom-2 w-4 h-4 bg-cyan-400 border-2 border-white rounded-full cursor-se-resize shadow-md"
+              title="Drag to Scale"
+            />
+
+            {/* Top Rotation Handle */}
+            <div
+              onMouseDown={(e) => handleCanvasMouseDown(e, 'rotate')}
+              className="absolute -top-6 left-1/2 transform -translate-x-1/2 w-5 h-5 bg-cyan-400 border-2 border-white rounded-full flex items-center justify-center cursor-grab shadow-md"
+              title="Drag to Rotate"
+            >
+              <RotateCw className="w-3 h-3 text-black" />
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Floating Canvas Safe Zones Toggle Bar */}
+      {/* Floating Canvas Controls Bar */}
       <div className="absolute top-4 right-4 flex items-center space-x-2 bg-dark-900/80 backdrop-blur-md border border-dark-700 rounded-lg p-1.5 z-20">
         <button
           onClick={() => setShowSafeZones(!showSafeZones)}
           className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold transition ${
             showSafeZones ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-gray-400 hover:text-gray-200'
           }`}
-          title="Toggle Social Safe-Zones Overlay (TikTok/Reels/Shorts UI guard)"
+          title="Toggle Social Safe-Zones Overlay"
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>Safe Zones</span>

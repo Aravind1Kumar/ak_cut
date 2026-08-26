@@ -159,4 +159,4 @@ export interface MediaAsset {
   outPoint?: number; // Source Monitor Out Cut Point
 }
 
-export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '21:9';
+export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | '21:9';

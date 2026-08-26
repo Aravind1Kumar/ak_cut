@@ -5,210 +5,127 @@ import { PreviewPlayer } from './components/PreviewPlayer';
 import { Inspector } from './components/Inspector';
 import { Timeline } from './components/Timeline';
 import { ExportModal } from './components/ExportModal';
+import { CommandPalette } from './components/CommandPalette';
 import { useTimelineStore } from './store/timelineStore';
-import {
-  Film,
-  Type,
-  Wand2,
-  Sliders,
-  Scissors,
-  X,
-} from 'lucide-react';
+import { Sparkles, Command, CheckCircle, X } from 'lucide-react';
 
 export const App: React.FC = () => {
   const [isExportOpen, setIsExportOpen] = useState(false);
-  const [activeMobileDrawer, setActiveMobileDrawer] = useState<'media' | 'text' | 'effects' | 'adjust' | null>(null);
-  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const {
-    isPlaying,
-    setIsPlaying,
-    splitSelectedClip,
-    deleteSelectedClip,
-    undo,
-    redo,
-    loadDemoProject,
-    layoutMode,
+    restoreProjectFromDB,
     isLeftPanelOpen,
     isRightPanelOpen,
+    layoutMode,
   } = useTimelineStore();
 
-  // Listen to window & visualViewport resize
+  // Restore IndexedDB project state & check onboarding status
   useEffect(() => {
-    const handleResize = () => {
-      const w = window.visualViewport ? window.visualViewport.width : window.innerWidth;
-      setWindowWidth(w);
-    };
+    restoreProjectFromDB();
 
-    window.addEventListener('resize', handleResize);
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleResize);
+    const onboardingDismissed = localStorage.getItem('ak_cut_onboarding_dismissed');
+    if (!onboardingDismissed) {
+      setShowOnboarding(true);
     }
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', handleResize);
-      }
-    };
   }, []);
 
-  // Determine mobile view state
-  const isMobileView =
-    layoutMode === 'mobile' || (layoutMode === 'auto' && windowWidth < 768);
-
-  // Load demo project on startup
-  useEffect(() => {
-    loadDemoProject();
-  }, []);
-
-  // Global Keyboard Shortcuts
+  // Keyboard shortcut listener for Command Palette (Ctrl/Cmd + K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA'
-      ) {
-        return;
-      }
-
-      if (e.code === 'Space') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setIsPlaying(!isPlaying);
-      } else if (e.code === 'KeyS') {
-        e.preventDefault();
-        splitSelectedClip();
-      } else if (e.code === 'Delete' || e.code === 'Backspace') {
-        e.preventDefault();
-        deleteSelectedClip();
-      } else if (e.ctrlKey && e.code === 'KeyZ') {
-        e.preventDefault();
-        undo();
-      } else if (e.ctrlKey && e.code === 'KeyY') {
-        e.preventDefault();
-        redo();
+        setIsCommandPaletteOpen((prev) => !prev);
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, setIsPlaying, splitSelectedClip, deleteSelectedClip, undo, redo]);
+  }, []);
+
+  const dismissOnboarding = () => {
+    localStorage.setItem('ak_cut_onboarding_dismissed', 'true');
+    setShowOnboarding(false);
+  };
 
   return (
-    <div className="flex flex-col h-[100dvh] w-screen bg-dark-900 text-gray-100 overflow-hidden font-sans select-none relative">
-      {/* Top Header Navigation */}
-      <Header onOpenExport={() => setIsExportOpen(true)} />
+    <div className="flex flex-col h-screen w-screen bg-dark-950 text-gray-100 overflow-hidden select-none font-sans">
+      {/* Header Bar */}
+      <Header onOpenExportModal={() => setIsExportOpen(true)} />
 
-      {/* Main Workspace (Media Library, Canvas Player, Inspector) */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative min-h-0 min-w-0">
-        {/* DESKTOP LEFT SIDEBAR: Media Library (Collapsible) */}
-        {!isMobileView && isLeftPanelOpen && (
-          <div className="shrink-0 transition-all duration-300">
-            <MediaLibrary />
-          </div>
-        )}
+      {/* Main Workspace Layout */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Left Media Library Panel */}
+        {isLeftPanelOpen && <MediaLibrary />}
 
-        {/* CENTER PREVIEW PLAYER CANVAS */}
-        <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden border-b md:border-b-0 border-dark-700 bg-black/40">
-          <PreviewPlayer />
-        </div>
+        {/* Center Canvas Preview */}
+        <PreviewPlayer />
 
-        {/* DESKTOP RIGHT SIDEBAR: Inspector (Collapsible) */}
-        {!isMobileView && isRightPanelOpen && (
-          <div className="shrink-0 transition-all duration-300">
-            <Inspector />
-          </div>
-        )}
+        {/* Right Property Inspector Panel */}
+        {isRightPanelOpen && <Inspector />}
       </div>
 
-      {/* BOTTOM MULTI-TRACK TIMELINE */}
-      <div className={`${isMobileView ? 'h-48' : 'h-64'} shrink-0 flex flex-col min-h-0 overflow-hidden`}>
-        <Timeline />
-      </div>
-
-      {/* MOBILE CAPCUT BOTTOM NAVIGATION TOOLBAR (Active on Mobile View) */}
-      {isMobileView && (
-        <div className="h-14 bg-dark-800 border-t border-dark-700 flex items-center justify-around px-2 z-30 shrink-0">
-          <button
-            onClick={() => setActiveMobileDrawer(activeMobileDrawer === 'media' ? null : 'media')}
-            className={`flex flex-col items-center justify-center p-1 text-[10px] font-medium transition ${
-              activeMobileDrawer === 'media' ? 'text-cyan-400 font-bold' : 'text-gray-400'
-            }`}
-          >
-            <Film className="w-5 h-5 mb-0.5" />
-            <span>Media</span>
-          </button>
-
-          <button
-            onClick={() => setActiveMobileDrawer(activeMobileDrawer === 'text' ? null : 'text')}
-            className={`flex flex-col items-center justify-center p-1 text-[10px] font-medium transition ${
-              activeMobileDrawer === 'text' ? 'text-cyan-400 font-bold' : 'text-gray-400'
-            }`}
-          >
-            <Type className="w-5 h-5 mb-0.5" />
-            <span>Text</span>
-          </button>
-
-          <button
-            onClick={splitSelectedClip}
-            className="flex flex-col items-center justify-center p-1 text-[10px] font-medium text-cyan-400 active:scale-95 transition"
-          >
-            <Scissors className="w-5 h-5 mb-0.5" />
-            <span>Split</span>
-          </button>
-
-          <button
-            onClick={() => setActiveMobileDrawer(activeMobileDrawer === 'effects' ? null : 'effects')}
-            className={`flex flex-col items-center justify-center p-1 text-[10px] font-medium transition ${
-              activeMobileDrawer === 'effects' ? 'text-cyan-400 font-bold' : 'text-gray-400'
-            }`}
-          >
-            <Wand2 className="w-5 h-5 mb-0.5" />
-            <span>Effects</span>
-          </button>
-
-          <button
-            onClick={() => setActiveMobileDrawer(activeMobileDrawer === 'adjust' ? null : 'adjust')}
-            className={`flex flex-col items-center justify-center p-1 text-[10px] font-medium transition ${
-              activeMobileDrawer === 'adjust' ? 'text-cyan-400 font-bold' : 'text-gray-400'
-            }`}
-          >
-            <Sliders className="w-5 h-5 mb-0.5" />
-            <span>Adjust</span>
-          </button>
-        </div>
-      )}
-
-      {/* MOBILE BOTTOM SHEET DRAWER OVERLAY */}
-      {isMobileView && activeMobileDrawer && (
-        <div className="absolute inset-x-0 bottom-14 top-12 bg-dark-900/95 backdrop-blur-md z-40 flex flex-col border-t border-dark-700 shadow-2xl animate-in slide-in-from-bottom duration-200">
-          <div className="h-10 bg-dark-800 px-4 flex items-center justify-between border-b border-dark-700 shrink-0">
-            <span className="text-xs font-bold text-cyan-400 uppercase tracking-wider">
-              {activeMobileDrawer === 'media' && 'Media Assets & Import'}
-              {activeMobileDrawer === 'text' && 'Text & Fonts'}
-              {activeMobileDrawer === 'effects' && 'CapCut Video Effects'}
-              {activeMobileDrawer === 'adjust' && 'Inspector & Adjustments'}
-            </span>
-            <button
-              onClick={() => setActiveMobileDrawer(null)}
-              className="p-1 text-gray-400 hover:text-white rounded-lg transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-2">
-            {(activeMobileDrawer === 'media' || activeMobileDrawer === 'text' || activeMobileDrawer === 'effects') && (
-              <MediaLibrary />
-            )}
-            {activeMobileDrawer === 'adjust' && <Inspector />}
-          </div>
-        </div>
-      )}
+      {/* Bottom Timeline Section */}
+      <Timeline />
 
       {/* Export Modal */}
       <ExportModal isOpen={isExportOpen} onClose={() => setIsExportOpen(false)} />
+
+      {/* Command Palette (Ctrl+K) */}
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        onClose={() => setIsCommandPaletteOpen(false)}
+        onOpenExportModal={() => setIsExportOpen(true)}
+      />
+
+      {/* Dismissible Onboarding Guidance Modal */}
+      {showOnboarding && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-dark-800 border border-cyan-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
+            <button
+              onClick={dismissOnboarding}
+              className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg transition"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center space-x-2 text-cyan-400">
+              <Sparkles className="w-5 h-5" />
+              <h3 className="text-base font-bold text-white">Welcome to AK Cut 2.0</h3>
+            </div>
+
+            <p className="text-xs text-gray-300 leading-relaxed">
+              Fast, creator-grade browser video editing for YouTube, Shorts, TikTok, and Reels!
+            </p>
+
+            <div className="space-y-2 text-xs text-gray-300 font-medium">
+              <div className="flex items-start space-x-2">
+                <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <span><strong className="text-white">Import Media:</strong> Drop videos, music & photos into Media tab.</span>
+              </div>
+              <div className="flex items-start space-x-2">
+                <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <span><strong className="text-white">Social Formats:</strong> Switch between 16:9 and 9:16 vertical canvas.</span>
+              </div>
+              <div className="flex items-start space-x-2">
+                <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <span><strong className="text-white">Command Palette:</strong> Press <kbd className="px-1.5 py-0.5 bg-dark-900 border border-dark-700 text-cyan-300 rounded text-[10px]">Ctrl+K</kbd> to search shortcuts.</span>
+              </div>
+              <div className="flex items-start space-x-2">
+                <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+                <span><strong className="text-white">Durable Save:</strong> Projects auto-save locally via IndexedDB.</span>
+              </div>
+            </div>
+
+            <button
+              onClick={dismissOnboarding}
+              className="w-full py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg transition"
+            >
+              Start Editing Video
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
-
-export default App;

@@ -166,8 +166,14 @@ export async function exportVideoProject(
   } else if (aspectRatio === '1:1') {
     width = 1080;
     height = 1080;
+  } else if (aspectRatio === '4:5') {
+    width = 1080;
+    height = 1350;
   } else if (aspectRatio === '4:3') {
     width = 1440;
+    height = 1080;
+  } else if (aspectRatio === '21:9') {
+    width = 2560;
     height = 1080;
   }
 
