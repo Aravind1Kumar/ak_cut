@@ -48,6 +48,8 @@ export type TransitionType =
   | 'glitch'
   | 'spin'
   | 'slide'
+  | 'slideLeft'
+  | 'slideRight'
   | 'blur';
 
 export interface TransitionProps {

@@ -15,6 +15,8 @@ export interface PersistentMediaAsset {
   height?: number;
 }
 
+const activeObjectURLs = new Set<string>();
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -34,20 +36,38 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-// Store Media Blob in IndexedDB media_assets store
+// Track and Create Object URL
+export function createManagedObjectURL(blob: Blob): string {
+  const url = URL.createObjectURL(blob);
+  activeObjectURLs.add(url);
+  return url;
+}
+
+// Revoke managed Object URL
+export function revokeManagedObjectURL(url: string): void {
+  if (url && activeObjectURLs.has(url)) {
+    URL.revokeObjectURL(url);
+    activeObjectURLs.delete(url);
+  }
+}
+
+// Revoke all managed Object URLs
+export function revokeAllManagedObjectURLs(): void {
+  activeObjectURLs.forEach((url) => URL.revokeObjectURL(url));
+  activeObjectURLs.clear();
+}
+
+// Store Media Blob in IndexedDB media_assets store - STRICT ERROR THROW
 export async function saveMediaAssetBlob(asset: PersistentMediaAsset): Promise<void> {
-  try {
-    const db = await openDB();
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_MEDIA, 'readwrite');
     const store = tx.objectStore(STORE_MEDIA);
-    store.put(asset);
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (e) {
-    console.warn('Failed to save media asset to IndexedDB:', e);
-  }
+    const req = store.put(asset);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(new Error(`Failed to store media asset "${asset.name}" in IndexedDB: ${req.error?.message || 'IndexedDB Write Error'}`));
+    tx.onerror = () => reject(new Error(`Transaction failed for media asset "${asset.name}": ${tx.error?.message || 'IndexedDB Transaction Error'}`));
+  });
 }
 
 // Retrieve Media Blob from IndexedDB
@@ -62,25 +82,22 @@ export async function getMediaAssetBlob(assetId: string): Promise<PersistentMedi
       request.onerror = () => reject(request.error);
     });
   } catch (e) {
-    console.warn('Failed to retrieve media asset from IndexedDB:', e);
+    console.error('Failed to retrieve media asset from IndexedDB:', e);
     return null;
   }
 }
 
-// Save Project State
+// Save Project State - STRICT ERROR THROW
 export async function saveProjectStateToIndexedDB(projectData: any): Promise<void> {
-  try {
-    const db = await openDB();
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_PROJECT, 'readwrite');
     const store = tx.objectStore(STORE_PROJECT);
-    store.put(projectData, 'active_project');
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  } catch (e) {
-    console.warn('Failed to save project state to IndexedDB:', e);
-  }
+    const req = store.put(projectData, 'active_project');
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(new Error(`Failed to save project state to IndexedDB: ${req.error?.message || 'IndexedDB Error'}`));
+    tx.onerror = () => reject(new Error(`Project save transaction failed: ${tx.error?.message || 'IndexedDB Error'}`));
+  });
 }
 
 // Load Project State
@@ -95,7 +112,7 @@ export async function loadProjectStateFromIndexedDB(): Promise<any | null> {
       request.onerror = () => reject(request.error);
     });
   } catch (e) {
-    console.warn('Failed to load project state from IndexedDB:', e);
+    console.error('Failed to load project state from IndexedDB:', e);
     return null;
   }
 }
@@ -115,7 +132,7 @@ export async function restoreProjectWithMediaBlobs(projectState: any): Promise<{
   for (const asset of projectState.mediaAssets || []) {
     const dbAsset = await getMediaAssetBlob(asset.id);
     if (dbAsset && dbAsset.blob) {
-      const runtimeUrl = URL.createObjectURL(dbAsset.blob);
+      const runtimeUrl = createManagedObjectURL(dbAsset.blob);
       assetUrlMap.set(asset.id, runtimeUrl);
       restoredMediaAssets.push({
         ...asset,

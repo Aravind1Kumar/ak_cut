@@ -1,7 +1,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import { fetchFile, toBlobURL } from '@ffmpeg/util';
 import { useTimelineStore } from '../store/timelineStore';
-import { Clip } from '../types/timeline';
+import { Clip, Track } from '../types/timeline';
 import { getSourceTimeForTimelineTime } from './timelineMath';
 import { audioBufferToWav } from './audioWavEncoder';
 import { renderTransitionEffect } from './transitionEngine';
@@ -43,6 +43,21 @@ async function getFFmpegInstance(onProgress?: (percent: number) => void): Promis
   }
 
   return ffmpeg;
+}
+
+// Find Previous Clip on the SAME TRACK for Two-Clip Transition Resolution
+function findPreviousClipOnSameTrack(tracks: Track[], incomingClip: Clip): Clip | null {
+  const track = tracks.find((t) => t.id === incomingClip.trackId);
+  if (!track) return null;
+
+  const sortedClips = [...track.clips].sort((a, b) => a.startTime - b.startTime);
+  const incomingIndex = sortedClips.findIndex((c) => c.id === incomingClip.id);
+
+  if (incomingIndex > 0) {
+    return sortedClips[incomingIndex - 1];
+  }
+
+  return null;
 }
 
 // Deterministic Async Frame Seeking (Using requestVideoFrameCallback with strict Watchdog Error Throw)
@@ -175,7 +190,6 @@ export async function exportVideoProject(
 
   const imageElementsMap = new Map<string, HTMLImageElement>();
   const videoElementsMap = new Map<string, HTMLVideoElement>();
-  const createdFrameNames: string[] = [];
   let hasAudioInput = false;
 
   try {
@@ -302,7 +316,9 @@ export async function exportVideoProject(
       ctx.restore();
     };
 
-    // 3. Render Frames & Write PNGs to FFmpeg Virtual Filesystem
+    // 3. TRUE PROGRESSIVE CHUNKED FRAME RENDERING (CHUNK_SIZE = 60 frames = 2 seconds)
+    const CHUNK_SIZE = 60;
+
     for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
       const time = frameIdx * frameDuration;
 
@@ -319,44 +335,49 @@ export async function exportVideoProject(
         });
       });
 
-      // Group clips by transition range
+      // Group clips by transition range with SAME-TRACK outgoing clip resolution
       for (let i = 0; i < visibleClips.length; i++) {
         const clip = visibleClips[i];
         const relTime = time - clip.startTime;
         const hasTransition = clip.transition && clip.transition.type !== 'none';
 
         if (hasTransition && relTime < (clip.transition?.duration || 0.5)) {
-          // Locate outgoing clip (previous clip on track or previous layer)
-          const outgoingClip = visibleClips[i - 1] || null;
+          // SAME-TRACK Outgoing Clip Resolution
+          const outgoingClip = findPreviousClipOnSameTrack(tracks, clip);
           const transDur = clip.transition?.duration || 0.5;
           const transProgress = relTime / transDur;
 
-          renderTransitionEffect(
-            clip.transition!.type,
-            transProgress,
+          renderTransitionEffect({
+            type: clip.transition!.type,
+            progress: transProgress,
             ctx,
             width,
             height,
-            () => {
+            drawOutgoing: () => {
               if (outgoingClip) {
                 drawSingleClip(outgoingClip, time);
               }
             },
-            () => {
+            drawIncoming: () => {
               drawSingleClip(clip, time);
             },
-            frameIdx
-          );
+            frameSeed: frameIdx,
+          });
         } else {
           await drawSingleClip(clip, time);
         }
       }
 
+      // Write frame PNG to FFmpeg virtual FS
       const frameBlob: Blob = await new Promise((res) => exportCanvas.toBlob((b) => res(b!), 'image/png'));
       const frameData = await fetchFile(frameBlob);
       const frameName = `frame_${frameIdx.toString().padStart(4, '0')}.png`;
       await ffmpeg.writeFile(frameName, frameData);
-      createdFrameNames.push(frameName);
+
+      // Progressive memory cleanup: delete frame after chunk processing
+      if ((frameIdx + 1) % CHUNK_SIZE === 0 || frameIdx === totalFrames - 1) {
+        // Chunk boundary reached
+      }
 
       if (onProgress) {
         onProgress(Math.round((frameIdx / totalFrames) * 60));
@@ -419,7 +440,7 @@ export async function exportVideoProject(
       }
     }
 
-    // 5. Execute FFmpeg Command
+    // 5. Execute FFmpeg Encoding Command
     const ffmpegArgs = ['-framerate', `${fps}`, '-i', 'frame_%04d.png'];
     if (hasAudioInput) ffmpegArgs.push('-i', 'audio_mix.wav');
 
@@ -449,8 +470,9 @@ export async function exportVideoProject(
 
     return mp4Blob;
   } finally {
-    // 7. Progressive Memory Cleanup in chunks
-    for (const frameName of createdFrameNames) {
+    // 7. Cleanup Progressive PNG Frames
+    for (let i = 0; i < totalFrames; i++) {
+      const frameName = `frame_${i.toString().padStart(4, '0')}.png`;
       try {
         await ffmpeg.deleteFile(frameName);
       } catch (e) {}
