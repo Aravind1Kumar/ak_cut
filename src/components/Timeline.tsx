@@ -21,6 +21,7 @@ import {
   ArrowRightLeft,
   Bookmark,
   Layers,
+  Edit3,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track, MediaType } from '../types/timeline';
@@ -37,7 +38,9 @@ export const Timeline: React.FC = () => {
   const [isShiftPressed, setIsShiftPressed] = useState(false);
 
   // Context Menu State
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
+  const [clipContextMenu, setClipContextMenu] = useState<{ x: number; y: number; clipId: string } | null>(null);
+  const [trackContextMenu, setTrackContextMenu] = useState<{ x: number; y: number; trackId: string } | null>(null);
+  const [markerContextMenu, setMarkerContextMenu] = useState<{ x: number; y: number; markerId: string } | null>(null);
 
   const {
     tracks,
@@ -60,6 +63,7 @@ export const Timeline: React.FC = () => {
     removeMarker,
     addTrack,
     deleteTrack,
+    renameTrack,
     toggleTrackMute,
     toggleTrackHidden,
     toggleTrackLocked,
@@ -71,10 +75,9 @@ export const Timeline: React.FC = () => {
     getProjectDuration,
   } = useTimelineStore();
 
-  // Shift Key Snapping Bypass & Frame Navigation Keyboard Shortcuts
+  // Keyboard Navigation & Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore shortcuts if user is typing inside input/textarea/contenteditable
       const target = e.target as HTMLElement;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
@@ -123,7 +126,7 @@ export const Timeline: React.FC = () => {
     };
   }, [currentTime, getProjectDuration]);
 
-  // Extract PCM Waveforms for Audio / Video Clips
+  // Extract PCM Waveforms
   useEffect(() => {
     tracks.forEach((track) => {
       track.clips.forEach((clip) => {
@@ -136,14 +139,17 @@ export const Timeline: React.FC = () => {
     });
   }, [tracks]);
 
-  // Close context menu on outside click
+  // Close context menus on outside click
   useEffect(() => {
-    const handleOutsideClick = () => setContextMenu(null);
+    const handleOutsideClick = () => {
+      setClipContextMenu(null);
+      setTrackContextMenu(null);
+      setMarkerContextMenu(null);
+    };
     window.addEventListener('click', handleOutsideClick);
     return () => window.removeEventListener('click', handleOutsideClick);
   }, []);
 
-  // Scrubbing Playhead
   const updateScrubPosition = (clientX: number) => {
     if (!timelineRef.current) return;
     const rect = timelineRef.current.getBoundingClientRect();
@@ -157,17 +163,42 @@ export const Timeline: React.FC = () => {
     updateScrubPosition(e.clientX);
   };
 
-  // Right Click Context Menu on Clips
+  // Context Menus
   const handleClipContextMenu = (e: React.MouseEvent, clipId: string) => {
     e.preventDefault();
     e.stopPropagation();
     setSelectedClipId(clipId);
-    setContextMenu({ x: e.clientX, y: e.clientY, clipId });
+    setClipContextMenu({ x: e.clientX, y: e.clientY, clipId });
   };
 
-  // Drag / Trim Handlers with Magnet Snapping
+  const handleTrackHeaderContextMenu = (e: React.MouseEvent, trackId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTrackContextMenu({ x: e.clientX, y: e.clientY, trackId });
+  };
+
+  const handleMarkerContextMenu = (e: React.MouseEvent, markerId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMarkerContextMenu({ x: e.clientX, y: e.clientY, markerId });
+  };
+
+  // Safe Track Deletion Check
+  const handleDeleteTrackSafely = (trackId: string) => {
+    const track = tracks.find((t) => t.id === trackId);
+    if (track && track.clips.length > 0) {
+      const ok = window.confirm(`Track "${track.name}" contains ${track.clips.length} clip(s). Delete track and its clips?`);
+      if (!ok) return;
+    }
+    deleteTrack(trackId);
+  };
+
+  // Drag / Trim Handlers with Lock Enforcement & Magnet Snapping
   const handleClipMouseDown = (e: React.MouseEvent, clip: Clip, track: Track) => {
-    if (track.locked) return;
+    if (track.locked) {
+      alert(`Track "${track.name}" is locked. Unlock track to move or edit clips.`);
+      return;
+    }
     e.stopPropagation();
 
     if (e.ctrlKey || e.metaKey) {
@@ -184,7 +215,10 @@ export const Timeline: React.FC = () => {
   };
 
   const handleTrimMouseDown = (e: React.MouseEvent, clip: Clip, track: Track, edge: 'left' | 'right') => {
-    if (track.locked) return;
+    if (track.locked) {
+      alert(`Track "${track.name}" is locked. Unlock track to trim clips.`);
+      return;
+    }
     e.stopPropagation();
     setSelectedClipId(clip.id);
     setTrimmingClip({
@@ -204,10 +238,9 @@ export const Timeline: React.FC = () => {
       let deltaTime = deltaX / zoomLevel;
       let newStart = Math.max(0, draggingClip.originalStart + deltaTime);
 
-      // Intelligent Magnet Snapping (Bypassed if Shift key pressed)
+      // Intelligent Magnet Snapping with Shift Bypass
       const effectiveSnapping = snappingEnabled && !isShiftPressed;
       if (effectiveSnapping) {
-        // Snap targets: 0s, playhead, markers, other clip edges
         const snapTargets = [0, currentTime, ...markers.map((m) => m.time)];
         tracks.forEach((t) => {
           t.clips.forEach((c) => {
@@ -278,20 +311,20 @@ export const Timeline: React.FC = () => {
     >
       {/* Timeline Toolbar Bar */}
       <div className="h-10 bg-dark-900/60 border-b border-dark-700 px-4 flex items-center justify-between overflow-x-auto scrollbar-none">
-        {/* Editing Tools */}
+        {/* Toolbar Buttons with Shortcut Tooltips */}
         <div className="flex items-center space-x-1 shrink-0">
           <button
             onClick={splitSelectedClip}
-            title="Split Clip at Playhead (S)"
+            title="Split selected clip at playhead — S"
             className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
           >
             <Scissors className="w-3.5 h-3.5" />
-            <span>Split</span>
+            <span>Split (S)</span>
           </button>
 
           <button
             onClick={duplicateSelectedClip}
-            title="Duplicate Selected Clip (Ctrl+D)"
+            title="Duplicate selected clip — Ctrl+D"
             className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
           >
             <Copy className="w-3.5 h-3.5" />
@@ -300,7 +333,7 @@ export const Timeline: React.FC = () => {
 
           <button
             onClick={detachAudioFromSelectedClip}
-            title="Detach Audio from Video"
+            title="Detach Audio from Video clip"
             className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
           >
             <FileAudio className="w-3.5 h-3.5" />
@@ -309,7 +342,7 @@ export const Timeline: React.FC = () => {
 
           <button
             onClick={deleteSelectedClip}
-            title="Delete Selected Clip (Delete)"
+            title="Delete selected clip — Delete"
             className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-red-400 rounded-md text-xs font-semibold transition"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -321,7 +354,7 @@ export const Timeline: React.FC = () => {
           {/* Add Marker Shortcut */}
           <button
             onClick={() => addMarker()}
-            title="Add Timeline Marker at Playhead (M)"
+            title="Add marker at playhead — M"
             className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-amber-400 rounded-md text-xs font-semibold transition"
           >
             <Bookmark className="w-3.5 h-3.5" />
@@ -347,7 +380,7 @@ export const Timeline: React.FC = () => {
           {/* Ripple Delete Toggle */}
           <button
             onClick={() => setRippleDeleteEnabled(!rippleDeleteEnabled)}
-            title="Toggle Ripple Delete (shift clips left upon delete)"
+            title="Toggle Track-Aware Ripple Delete"
             className={`flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-semibold transition ${
               rippleDeleteEnabled
                 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
@@ -392,20 +425,31 @@ export const Timeline: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Track & Timeline Area */}
+      {/* Main Track & Timeline Content */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Track Headers (Left Column) */}
         <div className="w-56 bg-dark-800 border-r border-dark-700 flex flex-col z-20 shadow-lg shrink-0">
           <div className="h-7 border-b border-dark-700 bg-dark-900/40 px-3 flex items-center justify-between">
             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tracks</span>
-            <span className="text-[10px] text-gray-500">{tracks.length}</span>
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => addTrack('video', 'New Video Track')}
+                className="p-0.5 text-gray-400 hover:text-cyan-400 rounded transition"
+                title="Add New Video Track"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {tracks.map((track) => (
               <div
                 key={track.id}
-                className="h-14 border-b border-dark-700/60 px-3 flex items-center justify-between bg-dark-800/80 hover:bg-dark-700/30 transition group"
+                onContextMenu={(e) => handleTrackHeaderContextMenu(e, track.id)}
+                className={`h-14 border-b border-dark-700/60 px-3 flex items-center justify-between transition group ${
+                  track.locked ? 'bg-red-950/20' : 'bg-dark-800/80 hover:bg-dark-700/30'
+                }`}
               >
                 <div className="flex items-center space-x-2 truncate max-w-[110px]">
                   {getTrackIcon(track.type)}
@@ -415,7 +459,7 @@ export const Timeline: React.FC = () => {
                 <div className="flex items-center space-x-1">
                   <button
                     onClick={() => toggleTrackHidden(track.id)}
-                    title={track.hidden ? 'Show Track' : 'Hide Track'}
+                    title={track.hidden ? 'Show Track (Visible in Export)' : 'Hide Track (Invisible in Export)'}
                     className={`p-1 rounded hover:bg-dark-600 transition ${
                       track.hidden ? 'text-amber-400' : 'text-gray-500 hover:text-gray-200'
                     }`}
@@ -425,7 +469,7 @@ export const Timeline: React.FC = () => {
 
                   <button
                     onClick={() => toggleTrackMute(track.id)}
-                    title={track.muted ? 'Unmute Track' : 'Mute Track'}
+                    title={track.muted ? 'Unmute Track (Audible in Export)' : 'Mute Track (Silent in Export)'}
                     className={`p-1 rounded hover:bg-dark-600 transition ${
                       track.muted ? 'text-red-400' : 'text-gray-500 hover:text-gray-200'
                     }`}
@@ -435,7 +479,7 @@ export const Timeline: React.FC = () => {
 
                   <button
                     onClick={() => toggleTrackLocked(track.id)}
-                    title={track.locked ? 'Unlock Track' : 'Lock Track'}
+                    title={track.locked ? 'Unlock Track' : 'Lock Track (Prevents editing clips)'}
                     className={`p-1 rounded hover:bg-dark-600 transition ${
                       track.locked ? 'text-cyan-400' : 'text-gray-500 hover:text-gray-200'
                     }`}
@@ -444,7 +488,7 @@ export const Timeline: React.FC = () => {
                   </button>
 
                   <button
-                    onClick={() => deleteTrack(track.id)}
+                    onClick={() => handleDeleteTrackSafely(track.id)}
                     title="Delete Track"
                     className="p-1 text-gray-500 hover:text-red-400 hover:bg-dark-600 rounded transition opacity-0 group-hover:opacity-100"
                   >
@@ -485,17 +529,18 @@ export const Timeline: React.FC = () => {
               </div>
             ))}
 
-            {/* Persistent Markers on Ruler */}
+            {/* Persistent Timeline Markers (Hidden in export) */}
             {markers.map((marker) => (
               <div
                 key={marker.id}
                 onClick={(e) => {
                   e.stopPropagation();
-                  removeMarker(marker.id);
+                  setCurrentTime(marker.time);
                 }}
+                onContextMenu={(e) => handleMarkerContextMenu(e, marker.id)}
                 className="absolute top-0 z-20 flex items-center space-x-1 bg-amber-500 text-black px-1.5 py-0.5 rounded-b text-[9px] font-bold shadow-md cursor-pointer hover:bg-amber-400 transition"
                 style={{ left: `${marker.time * zoomLevel}px` }}
-                title={`Click to remove marker: ${marker.label}`}
+                title={`Marker: ${marker.label} (${marker.time.toFixed(1)}s)`}
               >
                 <Bookmark className="w-2.5 h-2.5 fill-current" />
                 <span>{marker.label}</span>
@@ -509,9 +554,15 @@ export const Timeline: React.FC = () => {
               <div
                 key={track.id}
                 className={`h-14 border-b border-dark-700/60 relative ${
-                  track.locked ? 'bg-dark-900/40 opacity-70' : 'bg-dark-900/20'
+                  track.locked ? 'bg-dark-900/60 opacity-60' : 'bg-dark-900/20'
                 }`}
               >
+                {track.clips.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center text-[10px] text-gray-600 font-medium italic pointer-events-none">
+                    Empty track — Drag media here
+                  </div>
+                )}
+
                 {track.clips.map((clip) => {
                   const clipLeft = clip.startTime * zoomLevel;
                   const clipWidth = clip.duration * zoomLevel;
@@ -538,7 +589,7 @@ export const Timeline: React.FC = () => {
                           : 'bg-purple-950/60 border-purple-700/60 hover:border-purple-500'
                       }`}
                     >
-                      {/* Real Web Audio API Waveform Overlay */}
+                      {/* Waveform Overlay */}
                       {peaks && (clip.type === 'audio' || clip.type === 'video') && (
                         <div className="absolute inset-x-2 bottom-1 top-5 flex items-end justify-between opacity-30 pointer-events-none">
                           {peaks.map((val, idx) => (
@@ -551,13 +602,13 @@ export const Timeline: React.FC = () => {
                         </div>
                       )}
 
-                      {/* Left Edge Drag Handle (Shorten / Trim Start) */}
+                      {/* Trim Handles */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
                         className={`absolute left-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-l transition-all z-10 ${
                           isSelected ? 'bg-cyan-400' : 'bg-white/30 hover:bg-cyan-400'
                         }`}
-                        title="Drag to trim start duration"
+                        title="Trim start duration"
                       />
 
                       {/* Clip Label */}
@@ -566,9 +617,9 @@ export const Timeline: React.FC = () => {
                         <span className="text-[11px] font-bold text-white truncate">{clip.name}</span>
                       </div>
 
-                      {/* Visual Transition Badge on Timeline */}
+                      {/* Visual Transition Badge */}
                       {hasTransition && (
-                        <div className="flex items-center space-x-1 px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white rounded text-[9px] font-extrabold shadow animate-pulse z-10">
+                        <div className="flex items-center space-x-1 px-1.5 py-0.5 bg-gradient-to-r from-purple-600 to-cyan-500 text-white rounded text-[9px] font-extrabold shadow z-10">
                           <ArrowRightLeft className="w-3 h-3" />
                           <span className="uppercase">{clip.transition?.type}</span>
                         </div>
@@ -579,13 +630,12 @@ export const Timeline: React.FC = () => {
                         {clip.duration.toFixed(1)}s
                       </span>
 
-                      {/* Right Edge Drag Handle (Shorten / Trim End) */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'right')}
                         className={`absolute right-0 top-0 bottom-0 w-2 hover:w-3.5 cursor-ew-resize rounded-r transition-all z-10 ${
                           isSelected ? 'bg-cyan-400' : 'bg-white/30 hover:bg-cyan-400'
                         }`}
-                        title="Drag to trim end duration"
+                        title="Trim end duration"
                       />
                     </div>
                   );
@@ -596,18 +646,18 @@ export const Timeline: React.FC = () => {
         </div>
       </div>
 
-      {/* Floating Right Click Context Menu */}
-      {contextMenu && (
+      {/* Clip Context Menu */}
+      {clipContextMenu && (
         <div
-          style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
-          className="fixed bg-dark-800 border border-dark-600 rounded-xl shadow-2xl py-1 z-50 min-w-[160px] text-xs font-semibold text-gray-200 animate-in fade-in zoom-in-95 duration-100"
+          style={{ top: `${clipContextMenu.y}px`, left: `${clipContextMenu.x}px` }}
+          className="fixed bg-dark-800 border border-dark-600 rounded-xl shadow-2xl py-1 z-50 min-w-[160px] text-xs font-semibold text-gray-200"
         >
           <button
             onClick={splitSelectedClip}
             className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2 text-cyan-300"
           >
             <Scissors className="w-3.5 h-3.5" />
-            <span>Split at Playhead</span>
+            <span>Split at Playhead (S)</span>
           </button>
           <button
             onClick={duplicateSelectedClip}
@@ -617,19 +667,77 @@ export const Timeline: React.FC = () => {
             <span>Duplicate Clip (Ctrl+D)</span>
           </button>
           <button
-            onClick={detachAudioFromSelectedClip}
-            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
-          >
-            <FileAudio className="w-3.5 h-3.5" />
-            <span>Detach Audio</span>
-          </button>
-          <div className="h-[1px] bg-dark-700 my-1" />
-          <button
             onClick={deleteSelectedClip}
             className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2 text-red-400"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>Delete Clip</span>
+          </button>
+        </div>
+      )}
+
+      {/* Track Header Context Menu */}
+      {trackContextMenu && (
+        <div
+          style={{ top: `${trackContextMenu.y}px`, left: `${trackContextMenu.x}px` }}
+          className="fixed bg-dark-800 border border-dark-600 rounded-xl shadow-2xl py-1 z-50 min-w-[160px] text-xs font-semibold text-gray-200"
+        >
+          <button
+            onClick={() => {
+              const name = prompt('Enter new track name:');
+              if (name) renameTrack(trackContextMenu.trackId, name);
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
+          >
+            <Edit3 className="w-3.5 h-3.5" />
+            <span>Rename Track</span>
+          </button>
+          <button
+            onClick={() => toggleTrackLocked(trackContextMenu.trackId)}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
+          >
+            <Lock className="w-3.5 h-3.5" />
+            <span>Lock / Unlock Track</span>
+          </button>
+          <button
+            onClick={() => toggleTrackMute(trackContextMenu.trackId)}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
+          >
+            <VolumeX className="w-3.5 h-3.5" />
+            <span>Mute / Unmute Track</span>
+          </button>
+          <button
+            onClick={() => toggleTrackHidden(trackContextMenu.trackId)}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+            <span>Hide / Show Track</span>
+          </button>
+          <div className="h-[1px] bg-dark-700 my-1" />
+          <button
+            onClick={() => handleDeleteTrackSafely(trackContextMenu.trackId)}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2 text-red-400"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete Track</span>
+          </button>
+        </div>
+      )}
+
+      {/* Marker Context Menu */}
+      {markerContextMenu && (
+        <div
+          style={{ top: `${markerContextMenu.y}px`, left: `${markerContextMenu.x}px` }}
+          className="fixed bg-dark-800 border border-dark-600 rounded-xl shadow-2xl py-1 z-50 min-w-[140px] text-xs font-semibold text-gray-200"
+        >
+          <button
+            onClick={() => {
+              removeMarker(markerContextMenu.markerId);
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-dark-700 flex items-center space-x-2 text-red-400"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Remove Marker</span>
           </button>
         </div>
       )}
