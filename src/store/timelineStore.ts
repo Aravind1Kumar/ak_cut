@@ -136,6 +136,7 @@ interface TimelineState {
   removeKeyframeFromClip: (clipId: string, keyframeId: string) => void;
 
   splitSelectedClip: () => void;
+  freezeFrameSelectedClip: (dataUrl: string) => void;
   duplicateSelectedClip: () => void;
   deleteSelectedClip: () => void;
   detachAudioFromSelectedClip: () => void;
@@ -585,6 +586,71 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
           mediaOffset: clip.mediaOffset + firstSegmentDuration * clip.speed,
         });
 
+        break;
+      }
+    }
+  },
+
+  freezeFrameSelectedClip: (dataUrl) => {
+    const { selectedClipId, currentTime, tracks } = get();
+    if (!selectedClipId) return;
+
+    for (const track of tracks) {
+      const clip = track.clips.find((c) => c.id === selectedClipId);
+      if (clip && clip.type === 'video' && currentTime > clip.startTime && currentTime < clip.startTime + clip.duration) {
+        get().pushHistory();
+
+        const firstSegmentDuration = currentTime - clip.startTime;
+        const freezeDuration = 3.0;
+        const secondSegmentDuration = clip.duration - firstSegmentDuration;
+        const secondMediaOffset = clip.mediaOffset + firstSegmentDuration * clip.speed;
+
+        const updatedClips = track.clips.map((c) => {
+          if (c.id === clip.id) {
+            return { ...c, duration: firstSegmentDuration };
+          }
+          return c;
+        });
+
+        const freezeClipId = `clip-freeze-${Date.now()}`;
+        const freezeClip: Clip = {
+          id: freezeClipId,
+          trackId: track.id,
+          name: `Freeze: ${clip.name}`,
+          type: 'image',
+          startTime: currentTime,
+          duration: freezeDuration,
+          mediaOffset: 0,
+          sourceDuration: freezeDuration,
+          src: dataUrl,
+          speed: 1,
+          transform: { ...clip.transform },
+          filter: { ...clip.filter },
+          audio: { volume: 0, fadeIn: 0, fadeOut: 0, muted: true },
+          transition: { type: 'none', duration: 0.5 },
+          keyframes: [],
+        };
+
+        const secondClipId = `clip-${Date.now()}-2`;
+        const secondClip: Clip = {
+          ...clip,
+          id: secondClipId,
+          startTime: currentTime + freezeDuration,
+          duration: secondSegmentDuration,
+          mediaOffset: secondMediaOffset,
+        };
+
+        set((state) => ({
+          tracks: state.tracks.map((t) =>
+            t.id === track.id
+              ? { ...t, clips: [...updatedClips.filter((c) => c.id !== secondClipId), freezeClip, secondClip] }
+              : t
+          ),
+          selectedClipId: freezeClipId,
+          selectedClipIds: [freezeClipId],
+        }));
+
+        get().saveProjectToDB();
         break;
       }
     }

@@ -48,7 +48,7 @@ export const Inspector: React.FC = () => {
     updateClipText,
     updateClipCaption,
     addKeyframeToClip,
-    splitSelectedClip,
+    freezeFrameSelectedClip,
     addClipToTrack,
     beginTransaction,
     commitTransaction,
@@ -109,22 +109,7 @@ export const Inspector: React.FC = () => {
     if (!previewCanvas) return;
 
     const dataUrl = previewCanvas.toDataURL('image/png');
-
-    beginTransaction();
-    splitSelectedClip();
-
-    let videoTrack = tracks.find((t) => t.clips.some((c) => c.id === selectedClip.id));
-    if (videoTrack) {
-      addClipToTrack(videoTrack.id, {
-        name: `Freeze: ${selectedClip.name}`,
-        type: 'image',
-        src: dataUrl,
-        startTime: currentTime,
-        duration: 3.0,
-        sourceDuration: 3.0,
-      });
-    }
-    commitTransaction();
+    freezeFrameSelectedClip(dataUrl);
   };
 
   const resetProperty = (prop: 'position' | 'scale' | 'rotation' | 'opacity' | 'volume' | 'filter') => {
@@ -440,6 +425,20 @@ export const Inspector: React.FC = () => {
                   value={selectedClip.filter.temperature || 0}
                   onChange={(e) => updateClipFilter(selectedClip!.id, { temperature: parseInt(e.target.value, 10) })}
                   className="w-full accent-blue-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Tint ({selectedClip.filter.tint || 0})
+                </span>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={selectedClip.filter.tint || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { tint: parseInt(e.target.value, 10) })}
+                  className="w-full accent-emerald-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
                 />
               </div>
 

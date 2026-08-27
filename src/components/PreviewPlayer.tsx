@@ -239,14 +239,19 @@ export const PreviewPlayer: React.FC = () => {
       ctx.globalAlpha = Math.max(0, Math.min(1, currentTransform.opacity));
 
       const f = clip.filter;
-      const expBrightness = f.brightness + (f.exposure || 0);
-      const tempHue = f.hueRotate + (f.temperature || 0);
+      const expBrightness = Math.max(0, f.brightness + (f.exposure || 0));
+      const tempHue = f.hueRotate + (f.temperature || 0) * 0.5 + (f.tint || 0) * 0.5;
       ctx.filter = `brightness(${expBrightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${tempHue}deg) sepia(${f.sepia}%)`;
 
-      const cropTop = (currentTransform.cropTop || 0) / 100;
-      const cropBottom = (currentTransform.cropBottom || 0) / 100;
-      const cropLeft = (currentTransform.cropLeft || 0) / 100;
-      const cropRight = (currentTransform.cropRight || 0) / 100;
+      const rawCropTop = (currentTransform.cropTop || 0) / 100;
+      const rawCropBottom = (currentTransform.cropBottom || 0) / 100;
+      const rawCropLeft = (currentTransform.cropLeft || 0) / 100;
+      const rawCropRight = (currentTransform.cropRight || 0) / 100;
+
+      const cropTop = Math.max(0, Math.min(0.45, rawCropTop));
+      const cropBottom = Math.max(0, Math.min(0.45, rawCropBottom));
+      const cropLeft = Math.max(0, Math.min(0.45, rawCropLeft));
+      const cropRight = Math.max(0, Math.min(0.45, rawCropRight));
 
       if (clip.type === 'image') {
         const img = imageElementsMap.current.get(clip.id);
@@ -255,8 +260,8 @@ export const PreviewPlayer: React.FC = () => {
           const natH = img.naturalHeight || height;
           const sx = natW * cropLeft;
           const sy = natH * cropTop;
-          const sw = natW * (1 - cropLeft - cropRight);
-          const sh = natH * (1 - cropTop - cropBottom);
+          const sw = Math.max(1, natW * (1 - cropLeft - cropRight));
+          const sh = Math.max(1, natH * (1 - cropTop - cropBottom));
 
           const aspect = sw / sh;
           let drawW = width;
@@ -278,8 +283,8 @@ export const PreviewPlayer: React.FC = () => {
           const natH = vid.videoHeight || height;
           const sx = natW * cropLeft;
           const sy = natH * cropTop;
-          const sw = natW * (1 - cropLeft - cropRight);
-          const sh = natH * (1 - cropTop - cropBottom);
+          const sw = Math.max(1, natW * (1 - cropLeft - cropRight));
+          const sh = Math.max(1, natH * (1 - cropTop - cropBottom));
 
           const aspect = sw / sh;
           let drawW = width;
