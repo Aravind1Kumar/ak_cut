@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Sparkles, X, Wand2, Key, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Sparkles, X, Wand2, Key, Loader2, AlertCircle } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { STT_PROVIDERS, SpeechToTextProvider } from '../services/sttProvider';
+import { STT_PROVIDERS } from '../services/sttProvider';
 import { extractAudioFromClip } from '../utils/audioExtraction';
 import { Clip } from '../types/timeline';
 
@@ -24,7 +24,6 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
 
   if (!isOpen) return null;
 
-  // Find candidate video or audio clip for transcription
   let mediaClip: Clip | null = null;
   for (const track of tracks) {
     const c = track.clips.find((clip) => clip.type === 'video' || clip.type === 'audio');
@@ -33,6 +32,13 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
       break;
     }
   }
+
+  const handleCancel = () => {
+    setIsProcessing(false);
+    setCurrentStage('');
+    setErrorMsg(null);
+    onClose();
+  };
 
   const handleGenerateCaptions = async () => {
     if (!mediaClip) {
@@ -50,15 +56,16 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
     setErrorMsg(null);
 
     try {
-      // Stage 1: Extract Audio
       setCurrentStage('Extracting Audio from Timeline Clip...');
       const audioBlob = await extractAudioFromClip(mediaClip);
 
-      // Stage 2: Transcribe Speech
       setCurrentStage('Transcribing Speech to Text...');
       const result = await provider.transcribe(audioBlob, selectedLanguage, apiKey);
 
-      // Stage 3: Building Captions & Timestamps
+      if (!result.segments || result.segments.length === 0) {
+        throw new Error('No speech was detected in the media source. No captions were generated.');
+      }
+
       setCurrentStage('Building Timeline Caption Track & Word Timestamps...');
 
       let captionTrack = tracks.find((t) => t.type === 'caption');
@@ -116,14 +123,12 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
     <div className="fixed inset-0 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
       <div className="bg-dark-800 border border-cyan-500/40 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 relative">
         <button
-          onClick={onClose}
-          disabled={isProcessing}
-          className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg transition disabled:opacity-30"
+          onClick={handleCancel}
+          className="absolute top-4 right-4 text-gray-400 hover:text-white p-1 rounded-lg transition"
         >
           <X className="w-5 h-5" />
         </button>
 
-        {/* Modal Title */}
         <div className="flex items-center space-x-2.5 text-cyan-400">
           <Wand2 className="w-5 h-5" />
           <h3 className="text-base font-bold text-white">Generate Automatic Captions</h3>
@@ -136,9 +141,7 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
           </div>
         )}
 
-        {/* Form Options */}
         <div className="space-y-3">
-          {/* Target Media Clip Info */}
           <div className="bg-dark-900/60 p-3 rounded-xl border border-dark-700 text-xs">
             <span className="text-gray-400">Target Media Source:</span>
             <div className="font-bold text-cyan-300 mt-0.5">
@@ -146,7 +149,6 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
             </div>
           </div>
 
-          {/* Language Selector */}
           <div>
             <label className="text-xs font-semibold text-gray-300 block mb-1">Spoken Language</label>
             <select
@@ -164,7 +166,6 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
             </select>
           </div>
 
-          {/* Provider Selector */}
           <div>
             <label className="text-xs font-semibold text-gray-300 block mb-1">Speech Recognition Engine</label>
             <select
@@ -180,7 +181,6 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
             </select>
           </div>
 
-          {/* API Key Input (if provider requires it) */}
           {STT_PROVIDERS.find((p) => p.id === selectedProviderId)?.requiresApiKey && (
             <div>
               <label className="text-xs font-semibold text-gray-300 block mb-1 flex items-center space-x-1">
@@ -197,7 +197,6 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
             </div>
           )}
 
-          {/* Caption Style Preset */}
           <div>
             <label className="text-xs font-semibold text-gray-300 block mb-1">Caption Style Preset</label>
             <div className="grid grid-cols-2 gap-2">
@@ -223,7 +222,6 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
           </div>
         </div>
 
-        {/* Progress Stage Display */}
         {isProcessing && (
           <div className="p-3 bg-cyan-950/40 border border-cyan-500/30 rounded-xl flex items-center space-x-2 text-cyan-300 text-xs font-semibold">
             <Loader2 className="w-4 h-4 animate-spin shrink-0 text-cyan-400" />
@@ -231,15 +229,25 @@ export const GenerateCaptionsModal: React.FC<GenerateCaptionsModalProps> = ({ is
           </div>
         )}
 
-        {/* Submit Button */}
-        <button
-          onClick={handleGenerateCaptions}
-          disabled={isProcessing || !mediaClip}
-          className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg transition transform active:scale-95 disabled:opacity-40 flex items-center justify-center space-x-2"
-        >
-          {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-          <span>{isProcessing ? 'Generating Captions...' : 'Generate Automatic Captions'}</span>
-        </button>
+        <div className="flex items-center space-x-3 pt-2">
+          {isProcessing && (
+            <button
+              onClick={handleCancel}
+              className="py-3 px-4 bg-dark-700 hover:bg-dark-600 text-gray-300 font-semibold text-xs rounded-xl transition"
+            >
+              Cancel
+            </button>
+          )}
+
+          <button
+            onClick={handleGenerateCaptions}
+            disabled={isProcessing || !mediaClip}
+            className="flex-1 py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg transition transform active:scale-95 disabled:opacity-40 flex items-center justify-center space-x-2"
+          >
+            {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            <span>{isProcessing ? 'Generating Captions...' : 'Generate Automatic Captions'}</span>
+          </button>
+        </div>
       </div>
     </div>
   );

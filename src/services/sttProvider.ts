@@ -41,23 +41,11 @@ export class WebSpeechSTTProvider implements SpeechToTextProvider {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
       if (!SpeechRecognition) {
-        // Fallback: Generate structured transcript segments from audio duration
-        resolve({
-          language,
-          duration: 10,
-          segments: [
-            {
-              startTime: 0.0,
-              endTime: 5.0,
-              text: 'Welcome to AK Cut Automatic Captions',
-            },
-            {
-              startTime: 5.0,
-              endTime: 10.0,
-              text: 'Fast desktop and mobile video editor',
-            },
-          ],
-        });
+        reject(
+          new Error(
+            'Automatic captions are not supported in this browser. Please use Chrome/Edge or another transcription provider.'
+          )
+        );
         return;
       }
 
@@ -97,17 +85,15 @@ export class WebSpeechSTTProvider implements SpeechToTextProvider {
       };
 
       recognition.onend = () => {
-        resolve({
-          language,
-          duration: startTime,
-          segments: segments.length > 0 ? segments : [
-            {
-              startTime: 0.0,
-              endTime: 5.0,
-              text: 'AK Cut Speech Caption Engine',
-            },
-          ],
-        });
+        if (segments.length > 0) {
+          resolve({
+            language,
+            duration: startTime,
+            segments,
+          });
+        } else {
+          reject(new Error('No speech was detected in the media source. No captions were generated.'));
+        }
       };
 
       recognition.start();
@@ -117,7 +103,7 @@ export class WebSpeechSTTProvider implements SpeechToTextProvider {
 }
 
 /**
- * OpenAI Whisper / AssemblyAI / Remote STT API Provider Adapter
+ * OpenAI Whisper / Remote STT API Provider Adapter
  */
 export class WhisperAPIProvider implements SpeechToTextProvider {
   id = 'whisper-api';
@@ -170,6 +156,10 @@ export class WhisperAPIProvider implements SpeechToTextProvider {
       startTime: w.start,
       endTime: w.end,
     }));
+
+    if (segments.length === 0) {
+      throw new Error('No speech was detected in the media source. No captions were generated.');
+    }
 
     return {
       language: data.language || language,
