@@ -238,6 +238,16 @@ export const PreviewPlayer: React.FC = () => {
 
       ctx.globalAlpha = Math.max(0, Math.min(1, currentTransform.opacity));
 
+      const blendMap: Record<string, GlobalCompositeOperation> = {
+        normal: 'source-over',
+        multiply: 'multiply',
+        screen: 'screen',
+        overlay: 'overlay',
+        darken: 'darken',
+        lighten: 'lighten',
+      };
+      ctx.globalCompositeOperation = blendMap[currentTransform.blendMode || 'normal'] || 'source-over';
+
       const f = clip.filter;
       const expBrightness = Math.max(0, f.brightness + (f.exposure || 0));
       const tempHue = f.hueRotate + (f.temperature || 0) * 0.5 + (f.tint || 0) * 0.5;

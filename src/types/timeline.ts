@@ -2,6 +2,8 @@ export type MediaType = 'video' | 'audio' | 'text' | 'image' | 'caption';
 
 export type SpeedCurveType = 'flat' | 'hero' | 'montage' | 'bulletTime' | 'flashOut';
 
+export type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten';
+
 export interface TransformProps {
   x: number;       // Percentage offset (-50 to +50)
   y: number;       // Percentage offset (-50 to +50)
@@ -14,6 +16,7 @@ export interface TransformProps {
   cropBottom?: number; // % 0..50
   cropLeft?: number;   // % 0..50
   cropRight?: number;  // % 0..50
+  blendMode?: BlendMode;
 }
 
 export interface FilterProps {
@@ -102,22 +105,21 @@ export interface TimelineMarker {
   color: string;
 }
 
-// Canonical Caption Timestamp Model (Phase 3A)
 export interface CaptionWord {
   id: string;
   word: string;
   text?: string;
-  startTime: number; // timeline-relative seconds
+  startTime: number;
   endTime: number;
 }
 
 export interface CaptionSegment {
   id: string;
   trackId: string;
-  startTime: number; // timeline-relative seconds
+  startTime: number;
   endTime: number;
   text: string;
-  words?: CaptionWord[]; // ONLY present when real word timestamps exist
+  words?: CaptionWord[];
   styleId?: string;
 }
 
@@ -151,7 +153,7 @@ export interface CaptionStyle {
 export interface CaptionTrackData {
   id: string;
   name: string;
-  language: string; // e.g. 'en', 'te', 'mixed'
+  language: string;
   segments: CaptionSegment[];
 }
 
@@ -170,12 +172,12 @@ export interface Clip {
   trackId: string;
   name: string;
   type: MediaType;
-  startTime: number;     // timeline position in seconds
-  duration: number;      // clip duration on timeline
-  mediaOffset: number;   // in-point offset from original media start (seconds)
-  sourceDuration: number; // original asset duration
-  src: string;           // object URL or base64 data
-  speed: number;         // playback speed multiplier (default 1)
+  startTime: number;
+  duration: number;
+  mediaOffset: number;
+  sourceDuration: number;
+  src: string;
+  speed: number;
   speedCurve?: SpeedCurveType;
 
   transform: TransformProps;

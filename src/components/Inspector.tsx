@@ -18,10 +18,11 @@ import {
   Snowflake,
   Sun,
   Thermometer,
+  Layers,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
-import { CaptionStyle } from '../types/timeline';
+import { CaptionStyle, BlendMode } from '../types/timeline';
 
 let copiedCaptionStyle: CaptionStyle | null = null;
 
@@ -112,11 +113,23 @@ export const Inspector: React.FC = () => {
     freezeFrameSelectedClip(dataUrl);
   };
 
+  const handleApplyPipPreset = (position: 'br' | 'bl' | 'tr' | 'tl' | 'center') => {
+    if (!selectedClip) return;
+    beginTransaction();
+    if (position === 'br') updateClipTransform(selectedClip.id, { x: 30, y: 30, scale: 0.35 });
+    else if (position === 'bl') updateClipTransform(selectedClip.id, { x: -30, y: 30, scale: 0.35 });
+    else if (position === 'tr') updateClipTransform(selectedClip.id, { x: 30, y: -30, scale: 0.35 });
+    else if (position === 'tl') updateClipTransform(selectedClip.id, { x: -30, y: -30, scale: 0.35 });
+    else updateClipTransform(selectedClip.id, { x: 0, y: 0, scale: 1.0 });
+    commitTransaction();
+  };
+
   const resetProperty = (prop: 'position' | 'scale' | 'rotation' | 'opacity' | 'volume' | 'filter') => {
     beginTransaction();
     if (prop === 'position') updateClipTransform(selectedClip!.id, { x: 0, y: 0 });
     else if (prop === 'scale') updateClipTransform(selectedClip!.id, { scale: 1.0, flipHorizontal: false, flipVertical: false, cropTop: 0, cropBottom: 0, cropLeft: 0, cropRight: 0 });
     else if (prop === 'rotation') updateClipTransform(selectedClip!.id, { rotation: 0 });
+    else if (prop === 'opacity') updateClipTransform(selectedClip!.id, { opacity: 1.0 });
     else if (prop === 'volume') updateClipAudio(selectedClip!.id, { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false });
     else if (prop === 'filter') updateClipFilter(selectedClip!.id, { brightness: 100, contrast: 100, saturation: 100, blur: 0, hueRotate: 0, sepia: 0, exposure: 0, temperature: 0, tint: 0 });
     commitTransaction();
@@ -212,19 +225,109 @@ export const Inspector: React.FC = () => {
         </div>
       )}
 
-      {/* TRANSFORM SECTION (X/Y, Scale, Rotate, Flip, Crop) */}
+      {/* TRANSFORM, COMPOSITING & PIP SECTION */}
       <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
         <button
           onClick={() => toggleSection('transform')}
           className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
         >
-          <span>Transform & Crop</span>
+          <span>Transform & Compositing</span>
           {openSections.transform ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
 
         {openSections.transform && (
           <div className="p-3 space-y-3">
-            <div className="flex items-center justify-between">
+            {/* PIP Presets */}
+            {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+              <div>
+                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block mb-1.5 flex items-center space-x-1">
+                  <Layers className="w-3 h-3" />
+                  <span>Picture-in-Picture (PIP) Presets</span>
+                </span>
+                <div className="grid grid-cols-5 gap-1">
+                  <button
+                    onClick={() => handleApplyPipPreset('tl')}
+                    className="py-1 px-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-[10px] font-semibold text-gray-300 rounded text-center"
+                    title="Top-Left PIP"
+                  >
+                    TL
+                  </button>
+                  <button
+                    onClick={() => handleApplyPipPreset('tr')}
+                    className="py-1 px-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-[10px] font-semibold text-gray-300 rounded text-center"
+                    title="Top-Right PIP"
+                  >
+                    TR
+                  </button>
+                  <button
+                    onClick={() => handleApplyPipPreset('bl')}
+                    className="py-1 px-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-[10px] font-semibold text-gray-300 rounded text-center"
+                    title="Bottom-Left PIP"
+                  >
+                    BL
+                  </button>
+                  <button
+                    onClick={() => handleApplyPipPreset('br')}
+                    className="py-1 px-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-[10px] font-semibold text-gray-300 rounded text-center"
+                    title="Bottom-Right PIP"
+                  >
+                    BR
+                  </button>
+                  <button
+                    onClick={() => handleApplyPipPreset('center')}
+                    className="py-1 px-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-[10px] font-semibold text-gray-400 rounded text-center"
+                    title="Reset PIP"
+                  >
+                    Reset
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Blend Mode Selector */}
+            <div>
+              <span className="text-[10px] font-semibold text-gray-400 block mb-1">Blend Mode (Compositing)</span>
+              <select
+                value={selectedClip.transform.blendMode || 'normal'}
+                onChange={(e) => updateClipTransform(selectedClip!.id, { blendMode: e.target.value as BlendMode })}
+                className="w-full bg-dark-800 border border-dark-700 rounded p-1.5 text-xs text-white outline-none focus:border-cyan-500"
+              >
+                <option value="normal">Normal (Source Over)</option>
+                <option value="multiply">Multiply (Darken Blend)</option>
+                <option value="screen">Screen (Lighten Blend)</option>
+                <option value="overlay">Overlay (Contrast Blend)</option>
+                <option value="darken">Darken (Min Color)</option>
+                <option value="lighten">Lighten (Max Color)</option>
+              </select>
+            </div>
+
+            {/* Opacity Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">
+                  Opacity ({Math.round(selectedClip.transform.opacity * 100)}%)
+                </span>
+                <button
+                  onClick={() => resetProperty('opacity')}
+                  className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5"
+                >
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <input
+                type="range"
+                min="0.0"
+                max="1.0"
+                step="0.02"
+                value={selectedClip.transform.opacity}
+                onChange={(e) => updateClipTransform(selectedClip!.id, { opacity: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+              />
+            </div>
+
+            {/* Flip Orientation */}
+            <div className="flex items-center justify-between pt-2 border-t border-dark-700/60">
               <span className="text-xs font-semibold text-gray-300">Flip Orientation</span>
               <div className="flex items-center space-x-2">
                 <button
@@ -261,6 +364,7 @@ export const Inspector: React.FC = () => {
               </div>
             </div>
 
+            {/* Position X / Y */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-semibold text-gray-400">Position X / Y (%)</span>
@@ -288,6 +392,7 @@ export const Inspector: React.FC = () => {
               </div>
             </div>
 
+            {/* Scale */}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <span className="text-[10px] font-semibold text-gray-400">Scale ({Math.round(selectedClip.transform.scale * 100)}%)</span>
@@ -319,6 +424,7 @@ export const Inspector: React.FC = () => {
               </div>
             </div>
 
+            {/* Video Crop Sliders */}
             <div className="pt-2 border-t border-dark-700/60 space-y-2">
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Video Crop (%)</span>
 

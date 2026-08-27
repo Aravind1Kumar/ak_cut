@@ -121,6 +121,7 @@ function getInterpolatedTransform(clip: Clip, relTime: number) {
         cropBottom: t1.cropBottom,
         cropLeft: t1.cropLeft,
         cropRight: t1.cropRight,
+        blendMode: t1.blendMode,
       };
     }
   }
@@ -239,6 +240,16 @@ export async function exportVideoProject(
       ctx.scale(currentTransform.scale * flipX, currentTransform.scale * flipY);
 
       ctx.globalAlpha = Math.max(0, Math.min(1, currentTransform.opacity));
+
+      const blendMap: Record<string, GlobalCompositeOperation> = {
+        normal: 'source-over',
+        multiply: 'multiply',
+        screen: 'screen',
+        overlay: 'overlay',
+        darken: 'darken',
+        lighten: 'lighten',
+      };
+      ctx.globalCompositeOperation = blendMap[currentTransform.blendMode || 'normal'] || 'source-over';
 
       const f = clip.filter;
       const expBrightness = Math.max(0, f.brightness + (f.exposure || 0));
