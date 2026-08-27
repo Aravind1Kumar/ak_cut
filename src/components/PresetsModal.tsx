@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, LayoutTemplate, BookmarkPlus, Trash2, X, Check, Save } from 'lucide-react';
+import { Sparkles, LayoutTemplate, BookmarkPlus, Trash2, X, Check, Save, Edit2 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { BUILTIN_PRESETS, CreatorPreset, getUserPresetsFromDB, saveUserPresetToDB, deleteUserPresetFromDB } from '../utils/presetEngine';
-import { saveCurrentProjectAsTemplate, getTemplatesFromDB, applyTemplateToTimeline, ProjectTemplate } from '../utils/templateEngine';
+import { saveCurrentProjectAsTemplate, getTemplatesFromDB, deleteTemplateFromDB, applyTemplateToTimeline, ProjectTemplate } from '../utils/templateEngine';
 import { AspectRatio } from '../types/timeline';
 
 interface PresetsModalProps {
@@ -16,6 +16,8 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [newPresetName, setNewPresetName] = useState('');
   const [newTemplateName, setNewTemplateName] = useState('');
+  const [editingPresetId, setEditingPresetId] = useState<string | null>(null);
+  const [editPresetName, setEditPresetName] = useState('');
 
   const { tracks, selectedClipId, updateClipText, updateClipAudio, setAspectRatio, beginTransaction, commitTransaction } = useTimelineStore();
 
@@ -84,6 +86,15 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
     await loadData();
   };
 
+  const handleRenamePreset = async (preset: CreatorPreset) => {
+    if (!editPresetName.trim()) return;
+    const updated = { ...preset, name: editPresetName.trim() };
+    await saveUserPresetToDB(updated);
+    setEditingPresetId(null);
+    setEditPresetName('');
+    await loadData();
+  };
+
   const handleDeleteUserPreset = async (id: string) => {
     await deleteUserPresetFromDB(id);
     await loadData();
@@ -93,6 +104,11 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
     if (!newTemplateName.trim()) return;
     await saveCurrentProjectAsTemplate(newTemplateName.trim());
     setNewTemplateName('');
+    await loadData();
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    await deleteTemplateFromDB(id);
     await loadData();
   };
 
@@ -146,7 +162,7 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
                 : 'bg-dark-800 text-gray-400 border border-dark-700 hover:text-white'
             }`}
           >
-            My Saved Presets
+            My Saved Presets ({userPresets.length})
           </button>
           <button
             onClick={() => setActiveTab('templates')}
@@ -156,7 +172,7 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
                 : 'bg-dark-800 text-gray-400 border border-dark-700 hover:text-white'
             }`}
           >
-            Project Templates
+            Project Templates ({templates.length})
           </button>
           <button
             onClick={() => setActiveTab('social')}
@@ -225,10 +241,28 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
                     key={preset.id}
                     className="flex items-center justify-between p-2.5 bg-dark-800 border border-dark-700 rounded-xl"
                   >
-                    <div>
-                      <span className="text-xs font-bold text-gray-200 block">{preset.name}</span>
-                      <span className="text-[10px] text-cyan-400 font-mono uppercase">{preset.type}</span>
-                    </div>
+                    {editingPresetId === preset.id ? (
+                      <div className="flex items-center space-x-2 flex-1 mr-2">
+                        <input
+                          type="text"
+                          value={editPresetName}
+                          onChange={(e) => setEditPresetName(e.target.value)}
+                          className="flex-1 bg-dark-900 border border-cyan-500 rounded px-2 py-0.5 text-xs text-white outline-none"
+                          autoFocus
+                        />
+                        <button
+                          onClick={() => handleRenamePreset(preset)}
+                          className="p-1 text-emerald-400 hover:text-emerald-300"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <span className="text-xs font-bold text-gray-200 block">{preset.name}</span>
+                        <span className="text-[10px] text-cyan-400 font-mono uppercase">{preset.type}</span>
+                      </div>
+                    )}
 
                     <div className="flex items-center space-x-1.5">
                       <button
@@ -239,8 +273,19 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
                         Apply
                       </button>
                       <button
+                        onClick={() => {
+                          setEditingPresetId(preset.id);
+                          setEditPresetName(preset.name);
+                        }}
+                        className="p-1 text-gray-400 hover:text-white rounded transition"
+                        title="Rename Preset"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
                         onClick={() => handleDeleteUserPreset(preset.id)}
                         className="p-1 text-gray-500 hover:text-red-400 rounded transition"
+                        title="Delete Preset"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -268,7 +313,7 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
                 disabled={!newTemplateName.trim()}
                 className="px-3 py-1 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs rounded-lg disabled:opacity-40 transition"
               >
-                Save Timeline as Template
+                Save Template
               </button>
             </div>
 
@@ -288,12 +333,21 @@ export const PresetsModal: React.FC<PresetsModalProps> = ({ isOpen, onClose }) =
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => handleApplyTemplate(tmpl)}
-                      className="px-3 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-semibold"
-                    >
-                      Apply Template
-                    </button>
+                    <div className="flex items-center space-x-1.5">
+                      <button
+                        onClick={() => handleApplyTemplate(tmpl)}
+                        className="px-3 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 rounded-lg text-xs font-semibold"
+                      >
+                        Apply Template
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTemplate(tmpl.id)}
+                        className="p-1 text-gray-500 hover:text-red-400 rounded transition"
+                        title="Delete Template"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

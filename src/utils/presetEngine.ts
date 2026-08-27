@@ -1,4 +1,8 @@
-import { Clip, CaptionStyle, FilterProps, TextProps, AudioProps } from '../types/timeline';
+import {
+  saveUserPresetToIndexedDB,
+  getUserPresetsFromIndexedDB,
+  deleteUserPresetFromIndexedDB,
+} from './projectPersistence';
 
 export type PresetType = 'text' | 'caption' | 'filter' | 'effect' | 'graphic' | 'animation' | 'audio' | 'export';
 
@@ -10,8 +14,6 @@ export interface CreatorPreset {
   data: Record<string, any>;
   createdAt: number;
 }
-
-const STORAGE_KEY_PRESETS = 'ak_cut_user_presets';
 
 export const BUILTIN_PRESETS: CreatorPreset[] = [
   // Text Presets
@@ -128,30 +130,25 @@ export const BUILTIN_PRESETS: CreatorPreset[] = [
 
 export async function getUserPresetsFromDB(): Promise<CreatorPreset[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_PRESETS);
-    return raw ? JSON.parse(raw) : [];
+    return (await getUserPresetsFromIndexedDB()) as CreatorPreset[];
   } catch (e) {
-    console.warn('Failed to load user presets:', e);
+    console.warn('Failed to load user presets from IndexedDB:', e);
     return [];
   }
 }
 
 export async function saveUserPresetToDB(preset: CreatorPreset): Promise<void> {
   try {
-    const current = await getUserPresetsFromDB();
-    const updated = [...current.filter((p) => p.id !== preset.id), preset];
-    localStorage.setItem(STORAGE_KEY_PRESETS, JSON.stringify(updated));
+    await saveUserPresetToIndexedDB(preset);
   } catch (e) {
-    console.warn('Failed to save user preset:', e);
+    console.warn('Failed to save user preset to IndexedDB:', e);
   }
 }
 
 export async function deleteUserPresetFromDB(presetId: string): Promise<void> {
   try {
-    const current = await getUserPresetsFromDB();
-    const updated = current.filter((p) => p.id !== presetId);
-    localStorage.setItem(STORAGE_KEY_PRESETS, JSON.stringify(updated));
+    await deleteUserPresetFromIndexedDB(presetId);
   } catch (e) {
-    console.warn('Failed to delete user preset:', e);
+    console.warn('Failed to delete user preset from IndexedDB:', e);
   }
 }

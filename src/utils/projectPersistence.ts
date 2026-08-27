@@ -1,7 +1,9 @@
 const DB_NAME = 'ak_cut';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_PROJECT = 'project_state';
 const STORE_MEDIA = 'media_assets';
+const STORE_PRESETS = 'user_presets';
+const STORE_TEMPLATES = 'project_templates';
 
 export interface PersistentMediaAsset {
   id: string;
@@ -28,6 +30,12 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_MEDIA)) {
         db.createObjectStore(STORE_MEDIA, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_PRESETS)) {
+        db.createObjectStore(STORE_PRESETS, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_TEMPLATES)) {
+        db.createObjectStore(STORE_TEMPLATES, { keyPath: 'id' });
       }
     };
 
@@ -157,4 +165,72 @@ export async function restoreProjectWithMediaBlobs(projectState: any): Promise<{
     tracks: restoredTracks,
     mediaAssets: restoredMediaAssets,
   };
+}
+
+// User Presets IndexedDB Persistence
+export async function saveUserPresetToIndexedDB(preset: any): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PRESETS, 'readwrite');
+    const store = tx.objectStore(STORE_PRESETS);
+    const req = store.put(preset);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getUserPresetsFromIndexedDB(): Promise<any[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PRESETS, 'readonly');
+    const store = tx.objectStore(STORE_PRESETS);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function deleteUserPresetFromIndexedDB(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_PRESETS, 'readwrite');
+    const store = tx.objectStore(STORE_PRESETS);
+    const req = store.delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+// Project Templates IndexedDB Persistence
+export async function saveTemplateToIndexedDB(template: any): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TEMPLATES, 'readwrite');
+    const store = tx.objectStore(STORE_TEMPLATES);
+    const req = store.put(template);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function getTemplatesFromIndexedDB(): Promise<any[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TEMPLATES, 'readonly');
+    const store = tx.objectStore(STORE_TEMPLATES);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function deleteTemplateFromIndexedDB(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_TEMPLATES, 'readwrite');
+    const store = tx.objectStore(STORE_TEMPLATES);
+    const req = store.delete(id);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
 }

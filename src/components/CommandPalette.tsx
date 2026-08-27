@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Scissors, Copy, Trash2, Bookmark, Download, Magnet, Layers, Smartphone, Monitor, Undo2, Redo2, Type, Sparkles, VolumeX, Lock, Eye } from 'lucide-react';
+import { Search, Scissors, Copy, Trash2, Bookmark, Download, Magnet, Layers, Smartphone, Monitor, Undo2, Redo2, Type, Sparkles, VolumeX, Lock, Eye, LayoutTemplate } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 
 interface CommandPaletteProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenExportModal: () => void;
+  onOpenPresetsModal?: () => void;
 }
 
-export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, onOpenExportModal }) => {
+export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, onOpenExportModal, onOpenPresetsModal }) => {
   const [query, setQuery] = useState('');
 
   const {
@@ -49,6 +50,42 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
   if (!isOpen) return null;
 
   const commands = [
+    {
+      name: 'Creator Style Presets & Templates',
+      shortcut: 'Presets',
+      icon: <Sparkles className="w-4 h-4 text-purple-400" />,
+      action: () => {
+        if (onOpenPresetsModal) onOpenPresetsModal();
+        onClose();
+      },
+    },
+    {
+      name: 'Set Aspect Ratio: YouTube Widescreen (16:9)',
+      shortcut: '16:9',
+      icon: <Monitor className="w-4 h-4 text-cyan-400" />,
+      action: () => {
+        setAspectRatio('16:9');
+        onClose();
+      },
+    },
+    {
+      name: 'Set Aspect Ratio: Shorts / Reels / TikTok (9:16)',
+      shortcut: '9:16',
+      icon: <Smartphone className="w-4 h-4 text-cyan-400" />,
+      action: () => {
+        setAspectRatio('9:16');
+        onClose();
+      },
+    },
+    {
+      name: 'Set Aspect Ratio: Instagram Post (4:5)',
+      shortcut: '4:5',
+      icon: <Layers className="w-4 h-4 text-purple-400" />,
+      action: () => {
+        setAspectRatio('4:5');
+        onClose();
+      },
+    },
     {
       name: 'Split Selected Clip',
       shortcut: 'S',
@@ -122,126 +159,60 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose,
       },
     },
     {
-      name: 'Add Timeline Marker',
-      shortcut: 'M',
-      icon: <Bookmark className="w-4 h-4 text-amber-400" />,
-      action: () => {
-        addMarker();
-        onClose();
-      },
-    },
-    {
-      name: 'Zoom In Timeline',
-      shortcut: 'Zoom +',
-      icon: <Sparkles className="w-4 h-4 text-cyan-400" />,
-      action: () => {
-        setZoomLevel(zoomLevel + 20);
-        onClose();
-      },
-    },
-    {
-      name: 'Zoom Out Timeline',
-      shortcut: 'Zoom -',
-      icon: <Sparkles className="w-4 h-4 text-blue-400" />,
-      action: () => {
-        setZoomLevel(zoomLevel - 20);
-        onClose();
-      },
-    },
-    {
-      name: `Toggle Magnet Snapping (${snappingEnabled ? 'ON' : 'OFF'})`,
-      shortcut: 'Shift bypass',
-      icon: <Magnet className="w-4 h-4 text-purple-400" />,
-      action: () => {
-        setSnappingEnabled(!snappingEnabled);
-        onClose();
-      },
-    },
-    {
-      name: `Toggle Ripple Delete (${rippleDeleteEnabled ? 'ON' : 'OFF'})`,
-      shortcut: 'Ripple',
-      icon: <Layers className="w-4 h-4 text-emerald-400" />,
-      action: () => {
-        setRippleDeleteEnabled(!rippleDeleteEnabled);
-        onClose();
-      },
-    },
-    {
-      name: 'Set TikTok / Shorts / Reels Canvas (9:16)',
-      shortcut: 'Vertical 9:16',
-      icon: <Smartphone className="w-4 h-4 text-cyan-400" />,
-      action: () => {
-        setAspectRatio('9:16');
-        onClose();
-      },
-    },
-    {
-      name: 'Set YouTube Canvas (16:9)',
-      shortcut: 'Landscape 16:9',
-      icon: <Monitor className="w-4 h-4 text-blue-400" />,
-      action: () => {
-        setAspectRatio('16:9');
-        onClose();
-      },
-    },
-    {
-      name: 'Set Instagram Post Canvas (4:5)',
-      shortcut: 'Portrait 4:5',
-      icon: <Smartphone className="w-4 h-4 text-purple-400" />,
-      action: () => {
-        setAspectRatio('4:5');
-        onClose();
-      },
-    },
-    {
       name: 'Export Video Project',
-      shortcut: 'Export MP4',
-      icon: <Download className="w-4 h-4 text-emerald-400" />,
+      shortcut: 'Ctrl+E',
+      icon: <Download className="w-4 h-4 text-green-400" />,
       action: () => {
-        onClose();
         onOpenExportModal();
+        onClose();
       },
     },
   ];
 
-  const filteredCommands = commands.filter((cmd) => cmd.name.toLowerCase().includes(query.toLowerCase()));
+  const filteredCommands = commands.filter((c) =>
+    c.name.toLowerCase().includes(query.toLowerCase())
+  );
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center pt-20 z-50 animate-in fade-in duration-150">
-      <div className="bg-dark-800 border border-dark-600 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
-        {/* Search Header */}
-        <div className="flex items-center space-x-3 px-4 py-3 border-b border-dark-700 bg-dark-900/60">
-          <Search className="w-5 h-5 text-gray-400 shrink-0" />
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center pt-24 z-50 p-4 select-none">
+      <div className="bg-dark-900 border border-dark-700 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden">
+        <div className="p-3 border-b border-dark-700 flex items-center space-x-3">
+          <Search className="w-5 h-5 text-cyan-400 ml-1" />
           <input
             type="text"
-            autoFocus
-            placeholder="Type a command or shortcut (e.g. Split, Export, TikTok, Copy)..."
+            placeholder="Type a command or social workflow action (e.g. Presets, 9:16, Split, Export)..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="w-full bg-transparent text-sm text-white placeholder-gray-500 outline-none"
+            autoFocus
+            className="w-full bg-transparent text-sm text-gray-100 placeholder-gray-500 outline-none font-semibold"
           />
-          <kbd className="px-2 py-0.5 bg-dark-700 text-gray-400 text-[10px] font-mono rounded">ESC</kbd>
+          <span className="text-[10px] font-mono bg-dark-800 text-gray-400 border border-dark-700 px-2 py-0.5 rounded">
+            ESC
+          </span>
         </div>
 
-        {/* Command List */}
         <div className="max-h-80 overflow-y-auto p-2 space-y-1">
           {filteredCommands.length === 0 ? (
             <p className="text-xs text-gray-500 text-center py-6">No matching commands found.</p>
           ) : (
             filteredCommands.map((cmd, idx) => (
-              <div
+              <button
                 key={idx}
                 onClick={cmd.action}
-                className="flex items-center justify-between px-3 py-2.5 hover:bg-dark-700 rounded-xl cursor-pointer transition group"
+                className="w-full flex items-center justify-between p-2.5 hover:bg-dark-800 rounded-xl transition group text-left"
               >
                 <div className="flex items-center space-x-3">
-                  {cmd.icon}
-                  <span className="text-xs font-semibold text-gray-200 group-hover:text-cyan-300">{cmd.name}</span>
+                  <div className="p-2 bg-dark-800 group-hover:bg-dark-700 rounded-lg border border-dark-700 transition">
+                    {cmd.icon}
+                  </div>
+                  <span className="text-xs font-bold text-gray-200 group-hover:text-cyan-400 transition">
+                    {cmd.name}
+                  </span>
                 </div>
-                <span className="px-2 py-0.5 bg-dark-900 text-gray-400 text-[10px] font-mono rounded border border-dark-700">
+                <span className="text-[10px] font-mono text-gray-500 bg-dark-950 px-2 py-0.5 rounded border border-dark-800">
                   {cmd.shortcut}
                 </span>
-              </div>
+              </button>
             ))
           )}
         </div>

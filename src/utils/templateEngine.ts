@@ -1,5 +1,10 @@
 import { useTimelineStore } from '../store/timelineStore';
 import { AspectRatio, MediaType } from '../types/timeline';
+import {
+  saveTemplateToIndexedDB,
+  getTemplatesFromIndexedDB,
+  deleteTemplateFromIndexedDB,
+} from './projectPersistence';
 
 export interface TemplateClipPlaceholder {
   name: string;
@@ -27,8 +32,6 @@ export interface ProjectTemplate {
   tracks: TemplateTrackPlaceholder[];
   createdAt: number;
 }
-
-const STORAGE_KEY_TEMPLATES = 'ak_cut_project_templates';
 
 export async function saveCurrentProjectAsTemplate(name: string): Promise<ProjectTemplate> {
   const store = useTimelineStore.getState();
@@ -60,11 +63,9 @@ export async function saveCurrentProjectAsTemplate(name: string): Promise<Projec
   };
 
   try {
-    const current = await getTemplatesFromDB();
-    const updated = [...current.filter((t) => t.id !== template.id), template];
-    localStorage.setItem(STORAGE_KEY_TEMPLATES, JSON.stringify(updated));
+    await saveTemplateToIndexedDB(template);
   } catch (e) {
-    console.warn('Failed to save project template:', e);
+    console.warn('Failed to save project template to IndexedDB:', e);
   }
 
   return template;
@@ -72,11 +73,18 @@ export async function saveCurrentProjectAsTemplate(name: string): Promise<Projec
 
 export async function getTemplatesFromDB(): Promise<ProjectTemplate[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_TEMPLATES);
-    return raw ? JSON.parse(raw) : [];
+    return (await getTemplatesFromIndexedDB()) as ProjectTemplate[];
   } catch (e) {
-    console.warn('Failed to load templates:', e);
+    console.warn('Failed to load templates from IndexedDB:', e);
     return [];
+  }
+}
+
+export async function deleteTemplateFromDB(templateId: string): Promise<void> {
+  try {
+    await deleteTemplateFromIndexedDB(templateId);
+  } catch (e) {
+    console.warn('Failed to delete template from IndexedDB:', e);
   }
 }
 
