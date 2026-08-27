@@ -21,14 +21,17 @@ import { buildCSSFilterString, renderPostProcessingEffects } from '../utils/filt
 import { renderShape, renderSticker } from '../utils/graphicsEngine';
 import { applyChromaKeyToCanvas } from '../utils/chromaKeyEngine';
 import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
+import { getInterpolatedTransform, getInterpolatedFilter } from '../utils/keyframeEngine';
 
 export const PreviewPlayer: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [containerBounds, setContainerBounds] = useState({ width: 0, height: 0 });
-  const [canvasDimensions, setCanvasDimensions] = useState({ width: 1280, height: 720 });
 
-  const [showSafeZones, setShowSafeZones] = useState(false);
+  const videoElementsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const imageElementsMap = useRef<Map<string, HTMLImageElement>>(new Map());
+
+  const [containerBounds, setContainerBounds] = useState({ width: 640, height: 360 });
+  const [showGrid, setShowGrid] = useState(false);
   const [canvasDragState, setCanvasDragState] = useState<{
     type: 'move' | 'scale' | 'rotate';
     startX: number;
@@ -39,6 +42,7 @@ export const PreviewPlayer: React.FC = () => {
   const {
     isPlaying,
     currentTime,
+    maxTimelineDuration,
     aspectRatio,
     tracks,
     selectedClipId,
@@ -47,172 +51,123 @@ export const PreviewPlayer: React.FC = () => {
     updateClipTransform,
     beginTransaction,
     commitTransaction,
-    getProjectDuration,
   } = useTimelineStore();
 
-  const imageElementsMap = useRef<Map<string, HTMLImageElement>>(new Map());
-  const videoElementsMap = useRef<Map<string, HTMLVideoElement>>(new Map());
-
   let selectedClip: Clip | null = null;
-  for (const track of tracks) {
-    const c = track.clips.find((clip) => clip.id === selectedClipId);
-    if (c) {
-      selectedClip = c;
-      break;
+  if (selectedClipId) {
+    for (const track of tracks) {
+      const found = track.clips.find((c) => c.id === selectedClipId);
+      if (found) {
+        selectedClip = found;
+        break;
+      }
     }
   }
 
+  // Dynamic Container Bounds Observer (Responsive fit)
   useEffect(() => {
-    let w = 1280;
-    let h = 720;
+    if (!containerRef.current) return;
 
-    if (aspectRatio === '9:16') {
-      w = 720;
-      h = 1280;
-    } else if (aspectRatio === '1:1') {
-      w = 1080;
-      h = 1080;
-    } else if (aspectRatio === '4:5') {
-      w = 1080;
-      h = 1350;
-    } else if (aspectRatio === '4:3') {
-      w = 960;
-      h = 720;
-    } else if (aspectRatio === '21:9') {
-      w = 1680;
-      h = 720;
-    }
-
-    setCanvasDimensions({ width: w, height: h });
-
-    if (containerRef.current) {
-      const observer = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          const cw = entry.contentRect.width;
-          const ch = entry.contentRect.height;
-          setContainerBounds({ width: cw, height: ch });
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          setContainerBounds({ width, height });
         }
-      });
-      observer.observe(containerRef.current);
-      return () => observer.disconnect();
-    }
-  }, [aspectRatio]);
+      }
+    });
 
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Sync Video & Image Element Cache
   useEffect(() => {
     tracks.forEach((track) => {
       track.clips.forEach((clip) => {
-        if (clip.type === 'image' && clip.src && !imageElementsMap.current.has(clip.id)) {
+        if (clip.type === 'video' && clip.src && !videoElementsMap.current.has(clip.id)) {
+          const video = document.createElement('video');
+          video.src = clip.src;
+          video.crossOrigin = 'anonymous';
+          video.muted = true;
+          video.load();
+          videoElementsMap.current.set(clip.id, video);
+        } else if (clip.type === 'image' && clip.src && !imageElementsMap.current.has(clip.id)) {
           const img = new Image();
           img.src = clip.src;
           img.crossOrigin = 'anonymous';
           imageElementsMap.current.set(clip.id, img);
-        } else if (clip.type === 'video' && clip.src && !videoElementsMap.current.has(clip.id)) {
-          const vid = document.createElement('video');
-          vid.src = clip.src;
-          vid.crossOrigin = 'anonymous';
-          vid.muted = true;
-          vid.playsInline = true;
-          videoElementsMap.current.set(clip.id, vid);
         }
       });
     });
   }, [tracks]);
 
-  const handleCanvasMouseDown = (e: React.MouseEvent, dragType: 'move' | 'scale' | 'rotate') => {
-    if (!selectedClip) return;
-    e.stopPropagation();
+  // Compute Target Dimensions based on Aspect Ratio
+  const getCanvasDimensions = () => {
+    let ratioNum = 16 / 9;
+    if (aspectRatio === '9:16') ratioNum = 9 / 16;
+    else if (aspectRatio === '1:1') ratioNum = 1;
+    else if (aspectRatio === '4:5') ratioNum = 4 / 5;
+    else if (aspectRatio === '4:3') ratioNum = 4 / 3;
+    else if (aspectRatio === '21:9') ratioNum = 21 / 9;
 
-    beginTransaction();
+    const maxW = containerBounds.width - 32;
+    const maxH = containerBounds.height - 32;
 
-    setCanvasDragState({
-      type: dragType,
-      startX: e.clientX,
-      startY: e.clientY,
-      initialTransform: { ...selectedClip.transform },
-    });
+    let width = maxW;
+    let height = maxW / ratioNum;
+
+    if (height > maxH) {
+      height = maxH;
+      width = maxH * ratioNum;
+    }
+
+    return { width: Math.max(200, Math.floor(width)), height: Math.max(200, Math.floor(height)) };
   };
 
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (!canvasDragState || !selectedClip) return;
+  const { width, height } = getCanvasDimensions();
 
-    const deltaX = e.clientX - canvasDragState.startX;
-    const deltaY = e.clientY - canvasDragState.startY;
+  // Playhead Tick Animation Frame Loop
+  useEffect(() => {
+    let animationFrameId: number;
+    let lastTime = performance.now();
 
-    if (canvasDragState.type === 'move') {
-      const percentX = canvasDragState.initialTransform.x + (deltaX / (containerBounds.width || 1)) * 100;
-      const percentY = canvasDragState.initialTransform.y + (deltaY / (containerBounds.height || 1)) * 100;
-      updateClipTransform(selectedClip.id, { x: percentX, y: percentY });
-    } else if (canvasDragState.type === 'scale') {
-      const scaleDelta = (deltaX + deltaY) * 0.005;
-      const newScale = Math.max(0.1, Math.min(3.0, canvasDragState.initialTransform.scale + scaleDelta));
-      updateClipTransform(selectedClip.id, { scale: newScale });
-    } else if (canvasDragState.type === 'rotate') {
-      const rotationDelta = deltaX * 0.5;
-      updateClipTransform(selectedClip.id, { rotation: canvasDragState.initialTransform.rotation + rotationDelta });
-    }
-  };
-
-  const handleCanvasMouseUp = () => {
-    if (canvasDragState) {
-      setCanvasDragState(null);
-      commitTransaction();
-    }
-  };
-
-  const interpolateTransform = (clip: Clip, relTime: number): Clip['transform'] => {
-    if (!clip.keyframes || clip.keyframes.length === 0) return clip.transform;
-
-    const sorted = [...clip.keyframes].sort((a, b) => a.time - b.time);
-    if (relTime <= sorted[0].time) {
-      return { ...clip.transform, ...sorted[0].transform };
-    }
-    if (relTime >= sorted[sorted.length - 1].time) {
-      return { ...clip.transform, ...sorted[sorted.length - 1].transform };
-    }
-
-    let prevKf = sorted[0];
-    let nextKf = sorted[sorted.length - 1];
-
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (relTime >= sorted[i].time && relTime <= sorted[i + 1].time) {
-        prevKf = sorted[i];
-        nextKf = sorted[i + 1];
-        break;
+    const loop = (now: number) => {
+      if (isPlaying) {
+        const delta = (now - lastTime) / 1000;
+        const nextTime = currentTime + delta;
+        if (nextTime >= maxTimelineDuration) {
+          setIsPlaying(false);
+          setCurrentTime(0);
+        } else {
+          setCurrentTime(nextTime);
+        }
       }
-    }
-
-    const duration = nextKf.time - prevKf.time;
-    const progress = duration > 0 ? (relTime - prevKf.time) / duration : 1;
-
-    const interpX = (prevKf.transform.x ?? clip.transform.x) + ((nextKf.transform.x ?? clip.transform.x) - (prevKf.transform.x ?? clip.transform.x)) * progress;
-    const interpY = (prevKf.transform.y ?? clip.transform.y) + ((nextKf.transform.y ?? clip.transform.y) - (prevKf.transform.y ?? clip.transform.y)) * progress;
-    const interpScale = (prevKf.transform.scale ?? clip.transform.scale) + ((nextKf.transform.scale ?? clip.transform.scale) - (prevKf.transform.scale ?? clip.transform.scale)) * progress;
-    const interpRot = (prevKf.transform.rotation ?? clip.transform.rotation) + ((nextKf.transform.rotation ?? clip.transform.rotation) - (prevKf.transform.rotation ?? clip.transform.rotation)) * progress;
-
-    return {
-      ...clip.transform,
-      x: interpX,
-      y: interpY,
-      scale: interpScale,
-      rotation: interpRot,
+      lastTime = now;
+      animationFrameId = requestAnimationFrame(loop);
     };
-  };
 
+    if (isPlaying) {
+      animationFrameId = requestAnimationFrame(loop);
+    }
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isPlaying, currentTime, maxTimelineDuration, setIsPlaying, setCurrentTime]);
+
+  // Canvas Render Frame Engine
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { width, height } = canvasDimensions;
-
     ctx.clearRect(0, 0, width, height);
 
-    ctx.fillStyle = '#090d16';
+    // Canvas Background Fill
+    ctx.fillStyle = '#0a0a0c';
     ctx.fillRect(0, 0, width, height);
 
+    // Render Visible Tracks Bottom-to-Top
     const visibleClips: Clip[] = [];
-
     tracks.forEach((track) => {
       if (track.hidden) return;
       track.clips.forEach((clip) => {
@@ -224,7 +179,8 @@ export const PreviewPlayer: React.FC = () => {
 
     const drawSingleClip = (clip: Clip) => {
       const relTime = currentTime - clip.startTime;
-      const currentTransform = interpolateTransform(clip, relTime);
+      const currentTransform = getInterpolatedTransform(clip, relTime);
+      const currentFilter = getInterpolatedFilter(clip, relTime);
 
       ctx.save();
 
@@ -251,7 +207,7 @@ export const PreviewPlayer: React.FC = () => {
       };
       ctx.globalCompositeOperation = blendMap[currentTransform.blendMode || 'normal'] || 'source-over';
 
-      ctx.filter = buildCSSFilterString(clip.filter);
+      ctx.filter = buildCSSFilterString(currentFilter);
 
       const rawCropTop = (currentTransform.cropTop || 0) / 100;
       const rawCropBottom = (currentTransform.cropBottom || 0) / 100;
@@ -353,157 +309,128 @@ export const PreviewPlayer: React.FC = () => {
         applyChromaKeyToCanvas(ctx, clip.chromaKey, width, height);
       }
 
-      renderPostProcessingEffects(ctx, clip.filter, width, height);
+      renderPostProcessingEffects(ctx, currentFilter, width, height);
 
       ctx.restore();
     };
 
     visibleClips.forEach((clip) => {
-      const relTime = currentTime - clip.startTime;
-      const hasTransition = clip.transition && clip.transition.type !== 'none';
-
-      if (hasTransition && relTime < (clip.transition?.duration || 0.5)) {
-        const outgoingClip = findPreviousClipOnSameTrack(tracks, clip);
-        const transDur = clip.transition?.duration || 0.5;
-        const transProgress = relTime / transDur;
-
-        renderTransitionEffect({
-          type: clip.transition!.type,
-          progress: transProgress,
-          ctx,
-          width,
-          height,
-          drawOutgoing: () => {
-            if (outgoingClip) drawSingleClip(outgoingClip);
-          },
-          drawIncoming: () => drawSingleClip(clip),
-          frameSeed: Math.floor(currentTime * 30),
-        });
-      } else {
-        drawSingleClip(clip);
-      }
-    });
-
-    if (showSafeZones && (aspectRatio === '9:16' || aspectRatio === '4:5')) {
-      ctx.save();
-      ctx.strokeStyle = 'rgba(0, 242, 254, 0.6)';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([10, 10]);
-      ctx.strokeRect(width * 0.1, height * 0.15, width * 0.8, height * 0.7);
-      ctx.fillStyle = 'rgba(0, 242, 254, 0.8)';
-      ctx.font = '16px Inter, sans-serif';
-      ctx.fillText(`SAFE ZONE (${aspectRatio})`, width * 0.15, height * 0.18);
-      ctx.restore();
-    }
-  }, [currentTime, canvasDimensions, tracks, showSafeZones, aspectRatio]);
-
-  useEffect(() => {
-    let animId: number;
-    let lastTime = performance.now();
-
-    const step = (now: number) => {
-      if (isPlaying) {
-        const delta = (now - lastTime) / 1000;
-        lastTime = now;
-        const nextTime = currentTime + delta;
-        const maxDur = getProjectDuration();
-
-        if (nextTime >= maxDur) {
-          setCurrentTime(0);
-          setIsPlaying(false);
-        } else {
-          setCurrentTime(nextTime);
-          animId = requestAnimationFrame(step);
+      const prevClip = findPreviousClipOnSameTrack(tracks, clip);
+      if (clip.transition && clip.transition.type !== 'none' && prevClip) {
+        const transStart = clip.startTime;
+        const transDur = clip.transition.duration;
+        if (currentTime >= transStart && currentTime <= transStart + transDur) {
+          const progress = (currentTime - transStart) / transDur;
+          renderTransitionEffect({
+            type: clip.transition.type,
+            progress,
+            ctx,
+            width,
+            height,
+            drawOutgoing: () => drawSingleClip(prevClip),
+            drawIncoming: () => drawSingleClip(clip),
+          });
+          return;
         }
       }
-    };
 
-    if (isPlaying) {
-      lastTime = performance.now();
-      animId = requestAnimationFrame(step);
+      drawSingleClip(clip);
+    });
+
+    // Render Bounding Box Controls on Selected Clip
+    if (selectedClip && selectedClip.type !== 'audio' && selectedClip.type !== 'caption') {
+      ctx.save();
+      const relTime = currentTime - selectedClip.startTime;
+      const tf = getInterpolatedTransform(selectedClip, relTime);
+
+      const posX = width / 2 + (tf.x / 100) * width;
+      const posY = height / 2 + (tf.y / 100) * height;
+
+      ctx.translate(posX, posY);
+      ctx.rotate((tf.rotation * Math.PI) / 180);
+
+      const boxW = (width * 0.4) * tf.scale;
+      const boxH = (height * 0.4) * tf.scale;
+
+      ctx.strokeStyle = '#00f2fe';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(-boxW / 2, -boxH / 2, boxW, boxH);
+
+      // Handles (Scale & Rotation)
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#00f2fe';
+
+      const handleSize = 8;
+      ctx.fillRect(boxW / 2 - handleSize / 2, boxH / 2 - handleSize / 2, handleSize, handleSize);
+
+      ctx.beginPath();
+      ctx.arc(0, -boxH / 2 - 20, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
     }
 
-    return () => cancelAnimationFrame(animId);
-  }, [isPlaying, currentTime]);
+    // Grid Overlay
+    if (showGrid) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.lineWidth = 1;
 
-  let scaleFactor = 1;
-  if (containerBounds.width > 0 && containerBounds.height > 0) {
-    const scaleW = containerBounds.width / canvasDimensions.width;
-    const scaleH = containerBounds.height / canvasDimensions.height;
-    scaleFactor = Math.min(scaleW, scaleH) * 0.92;
-  }
+      for (let x = width / 3; x < width; x += width / 3) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+
+      for (let y = height / 3; y < height; y += height / 3) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+    }
+  }, [width, height, tracks, currentTime, selectedClip, showGrid]);
 
   return (
     <div
       ref={containerRef}
-      onMouseMove={handleCanvasMouseMove}
-      onMouseUp={handleCanvasMouseUp}
-      className="flex-1 bg-dark-950 flex flex-col items-center justify-center relative select-none overflow-hidden p-4"
+      className="flex-1 bg-dark-950 flex flex-col items-center justify-center p-4 relative overflow-hidden select-none"
     >
-      <div className="absolute top-3 right-3 flex items-center space-x-2 z-20">
-        <button
-          onClick={() => setShowSafeZones(!showSafeZones)}
-          className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition ${
-            showSafeZones
-              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-              : 'bg-dark-800/80 text-gray-400 border-dark-700 hover:text-white'
-          }`}
-          title="Toggle Social Safe Zones"
-        >
-          <Grid className="w-4 h-4" />
-          <span className="hidden sm:inline">Safe Zone</span>
-        </button>
-      </div>
-
+      {/* Canvas Viewport Frame */}
       <div
-        className="relative bg-black rounded-xl shadow-2xl overflow-hidden border border-dark-800 flex items-center justify-center transition-all duration-150"
-        style={{
-          width: canvasDimensions.width * scaleFactor,
-          height: canvasDimensions.height * scaleFactor,
-        }}
+        className="relative shadow-2xl rounded-xl overflow-hidden border border-dark-700 bg-black flex items-center justify-center"
+        style={{ width: `${width}px`, height: `${height}px` }}
       >
-        <canvas
-          ref={canvasRef}
-          width={canvasDimensions.width}
-          height={canvasDimensions.height}
-          className="w-full h-full object-contain pointer-events-auto cursor-move"
-          onMouseDown={(e) => handleCanvasMouseDown(e, 'move')}
-        />
+        <canvas ref={canvasRef} width={width} height={height} className="block" />
 
-        {selectedClip && (
-          <div
-            className="absolute inset-0 pointer-events-none border-2 border-cyan-400/80 rounded"
-            style={{
-              transform: `translate(${selectedClip.transform.x}%, ${selectedClip.transform.y}%) rotate(${selectedClip.transform.rotation}deg) scale(${selectedClip.transform.scale})`,
-            }}
+        {/* Floating Quick Action Overlay Bar */}
+        <div className="absolute top-3 right-3 flex items-center space-x-2 bg-dark-900/80 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-dark-700/80 shadow-lg">
+          <button
+            onClick={() => setShowGrid(!showGrid)}
+            className={`p-1.5 rounded-lg transition ${
+              showGrid ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'text-gray-400 hover:text-white'
+            }`}
+            title="Toggle Rule-of-Thirds Grid"
           >
-            <div
-              onMouseDown={(e) => handleCanvasMouseDown(e, 'scale')}
-              className="absolute -top-2 -right-2 w-4 h-4 bg-cyan-400 rounded-full cursor-nwse-resize pointer-events-auto border-2 border-black shadow"
-              title="Drag to Scale"
-            />
-            <div
-              onMouseDown={(e) => handleCanvasMouseDown(e, 'rotate')}
-              className="absolute -top-6 left-1/2 -translate-x-1/2 w-4 h-4 bg-cyan-400 rounded-full cursor-grab pointer-events-auto border-2 border-black shadow"
-              title="Drag to Rotate"
-            />
-          </div>
-        )}
+            <Grid className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      <div className="h-12 bg-dark-900/90 border border-dark-700/80 rounded-2xl mt-3 px-4 flex items-center justify-between space-x-4 shadow-xl z-20">
+      {/* Playback Controls Bar */}
+      <div className="mt-4 flex items-center space-x-4 bg-dark-900/90 border border-dark-700 px-5 py-2.5 rounded-2xl shadow-xl">
         <button
           onClick={() => setIsPlaying(!isPlaying)}
-          className="w-8 h-8 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white flex items-center justify-center shadow-lg transition transform active:scale-95"
+          className="p-3 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-xl transition shadow-lg shadow-cyan-500/20"
+          title={isPlaying ? 'Pause' : 'Play'}
         >
-          {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
+          {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
         </button>
 
-        <div className="font-mono text-xs font-bold text-gray-200 tracking-wider">
-          <span className="text-cyan-400">{currentTime.toFixed(2)}s</span>
-          <span className="text-gray-500 mx-1">/</span>
-          <span>{getProjectDuration().toFixed(2)}s</span>
-        </div>
+        <span className="font-mono text-sm font-bold text-gray-200">
+          {currentTime.toFixed(2)}s <span className="text-gray-500">/ {maxTimelineDuration.toFixed(2)}s</span>
+        </span>
       </div>
     </div>
   );
