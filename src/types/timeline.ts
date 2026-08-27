@@ -93,10 +93,45 @@ export interface TimelineMarker {
   color: string;
 }
 
+// Canonical Caption Timestamp Model (Phase 3A)
 export interface CaptionWord {
+  id: string;
   word: string;
-  startTime: number;
+  text?: string;
+  startTime: number; // timeline-relative seconds
   endTime: number;
+}
+
+export interface CaptionSegment {
+  id: string;
+  trackId: string;
+  startTime: number; // timeline-relative seconds
+  endTime: number;
+  text: string;
+  words?: CaptionWord[]; // ONLY present when real word timestamps exist
+  styleId?: string;
+}
+
+export interface CaptionStyle {
+  id: string;
+  name: string;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: 'normal' | 'bold';
+  color: string;
+  outlineColor: string;
+  outlineWidth: number;
+  shadow: boolean;
+  background: string;
+  alignment: 'left' | 'center' | 'right';
+  highlightColor: string;
+}
+
+export interface CaptionTrackData {
+  id: string;
+  name: string;
+  language: string; // e.g. 'en', 'te', 'mixed'
+  segments: CaptionSegment[];
 }
 
 export interface CaptionProps {
@@ -104,6 +139,7 @@ export interface CaptionProps {
   stylePreset: 'classic' | 'bold' | 'news' | 'social' | 'minimal' | 'karaoke' | 'impact' | 'subtitle';
   speaker?: string;
   words?: CaptionWord[];
+  segment?: CaptionSegment;
 }
 
 export interface Clip {
