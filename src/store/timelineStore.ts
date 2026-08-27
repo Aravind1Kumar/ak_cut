@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import {
   Clip,
   Track,
+  MediaAsset,
+  TimelineMarker,
+  AspectRatio,
+  MediaType,
   TransformProps,
   FilterProps,
   AudioProps,
@@ -11,14 +15,17 @@ import {
   ChromaKeyProps,
   MaskProps,
   Keyframe,
-  TimelineMarker,
-  MediaAsset,
-  AspectRatio,
-  ProjectState,
-  MediaType,
   SpeedCurveType,
 } from '../types/timeline';
-import { saveProject, loadProject, restoreProjectWithMediaBlobs } from '../utils/projectPersistence';
+import {
+  saveProjectStateToIndexedDB,
+  loadProjectStateFromIndexedDB,
+  saveMediaAssetBlob,
+  getMediaAssetBlob,
+  deleteMediaAssetBlob,
+  restoreProjectWithMediaBlobs,
+  createManagedObjectURL,
+} from '../utils/projectPersistence';
 
 const DEFAULT_TRANSFORM: TransformProps = {
   x: 0,
@@ -26,6 +33,7 @@ const DEFAULT_TRANSFORM: TransformProps = {
   scale: 1,
   rotation: 0,
   opacity: 1,
+  blendMode: 'normal',
 };
 
 const DEFAULT_FILTER: FilterProps = {
@@ -135,10 +143,14 @@ interface TimelineState {
   addKeyframeToClip: (clipId: string) => void;
   removeKeyframeFromClip: (clipId: string, keyframeId: string) => void;
 
+  groupSelectedClips: () => void;
+  ungroupSelectedClips: () => void;
+
   splitSelectedClip: () => void;
   freezeFrameSelectedClip: (dataUrl: string) => void;
   duplicateSelectedClip: () => void;
   deleteSelectedClip: () => void;
+
   detachAudioFromSelectedClip: () => void;
   copySelectedClip: () => void;
   pasteClipAtPlayhead: () => void;
@@ -148,14 +160,12 @@ interface TimelineState {
   pushHistory: () => void;
   undo: () => void;
   redo: () => void;
-  loadDemoProject: () => void;
-  restoreProjectFromDB: () => Promise<void>;
-  restoreProjectData: (projectState: any) => Promise<void>;
-  getProjectDuration: () => number;
-  saveProjectToDB: () => void;
-}
 
-let saveDebounceTimer: any = null;
+  saveProjectToDB: () => Promise<void>;
+  loadProjectFromDB: () => Promise<void>;
+  restoreProjectFromDB: () => Promise<void>;
+  getProjectDuration: () => number;
+}
 
 export const useTimelineStore = create<TimelineState>((set, get) => ({
   isPlaying: false,
@@ -163,7 +173,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   maxTimelineDuration: 60,
   fps: 30,
   aspectRatio: '16:9',
-  zoomLevel: 40,
+  zoomLevel: 100,
   snappingEnabled: true,
   rippleDeleteEnabled: false,
   saveStatus: 'Saved',
@@ -175,11 +185,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   mediaAssets: [],
   markers: [],
   tracks: [
-    { id: 'track-v1', name: 'Main Video Track', type: 'video', locked: false, hidden: false, muted: false, clips: [] },
-    { id: 'track-a1', name: 'Main Audio Track', type: 'audio', locked: false, hidden: false, muted: false, clips: [] },
-    { id: 'track-t1', name: 'Text Track', type: 'text', locked: false, hidden: false, muted: false, clips: [] },
+    { id: 'track-v1', name: 'Main Video', type: 'video', locked: false, hidden: false, muted: false, clips: [] },
+    { id: 'track-a1', name: 'Audio 1', type: 'audio', locked: false, hidden: false, muted: false, clips: [] },
   ],
-
   selectedClipId: null,
   selectedClipIds: [],
   copiedClip: null,
@@ -195,8 +203,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
-  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(200, zoom)) }),
+  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(500, zoom)) }),
+
   setAspectRatio: (ratio) => {
+    get().pushHistory();
     set({ aspectRatio: ratio });
     get().saveProjectToDB();
   },
@@ -241,38 +251,64 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     return false;
   },
 
-  addMediaAsset: (assetData) => {
+  addMediaAsset: (assetData, fileBlob) => {
     const id = `asset-${Date.now()}`;
     const newAsset: MediaAsset = {
       ...assetData,
       id,
       createdAt: Date.now(),
     };
+
+    if (fileBlob) {
+      saveMediaAssetBlob({
+        id,
+        name: assetData.name,
+        mimeType: fileBlob.type,
+        type: assetData.type === 'caption' ? 'video' : (assetData.type as any),
+        blob: fileBlob,
+        size: fileBlob.size,
+        duration: assetData.duration,
+        width: assetData.width,
+        height: assetData.height,
+      }).catch((err) => console.error('Failed to store media blob in IndexedDB:', err));
+    }
+
     set((state) => ({ mediaAssets: [...state.mediaAssets, newAsset] }));
     get().saveProjectToDB();
     return id;
   },
 
   deleteMediaAsset: async (id) => {
-    if (get().isAssetReferenced(id)) return false;
-    set((state) => ({ mediaAssets: state.mediaAssets.filter((a) => a.id !== id) }));
+    if (get().isAssetReferenced(id)) {
+      alert('Cannot delete media asset that is currently used in timeline clips.');
+      return false;
+    }
+
+    get().pushHistory();
+    await deleteMediaAssetBlob(id);
+    set((state) => ({
+      mediaAssets: state.mediaAssets.filter((a) => a.id !== id),
+    }));
     get().saveProjectToDB();
     return true;
   },
 
   addTrack: (type, name) => {
     get().pushHistory();
+    const id = `track-${Date.now()}`;
     const count = get().tracks.filter((t) => t.type === type).length + 1;
-    const id = `track-${type}-${Date.now()}`;
+    const trackName = name || `${type.charAt(0).toUpperCase() + type.slice(1)} Track ${count}`;
+
     const newTrack: Track = {
       id,
-      name: name || `${type.charAt(0).toUpperCase() + type.slice(1)} Track ${count}`,
+      name: trackName,
       type,
       locked: false,
       hidden: false,
       muted: false,
       clips: [],
     };
+
     set((state) => ({ tracks: [...state.tracks, newTrack] }));
     get().saveProjectToDB();
     return id;
@@ -285,6 +321,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   renameTrack: (trackId, name) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, name } : t)),
     }));
@@ -292,6 +329,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   toggleTrackMute: (trackId) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, muted: !t.muted } : t)),
     }));
@@ -299,6 +337,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   toggleTrackHidden: (trackId) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, hidden: !t.hidden } : t)),
     }));
@@ -306,6 +345,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   toggleTrackLocked: (trackId) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, locked: !t.locked } : t)),
     }));
@@ -314,7 +354,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   addClipToTrack: (trackId, clipData) => {
     get().pushHistory();
-    const id = `clip-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const id = `clip-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
     const newClip: Clip = {
       id,
       assetId: clipData.assetId,
@@ -328,11 +368,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       src: clipData.src || '',
       speed: clipData.speed ?? 1,
       speedCurve: clipData.speedCurve || 'flat',
+      groupId: clipData.groupId,
       transform: { ...DEFAULT_TRANSFORM, ...clipData.transform },
       filter: { ...DEFAULT_FILTER, ...clipData.filter },
       audio: { ...DEFAULT_AUDIO, ...clipData.audio },
       text: clipData.text,
       caption: clipData.caption,
+      shape: clipData.shape,
+      sticker: clipData.sticker,
       transition: clipData.transition || { type: 'none', duration: 0.5 },
       chromaKey: clipData.chromaKey || DEFAULT_CHROMA_KEY,
       mask: clipData.mask || DEFAULT_MASK,
@@ -453,11 +496,12 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   updateClipCaption: (clipId, caption) => {
+    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
-          clip.id === clipId && clip.caption ? { ...clip, caption: { ...clip.caption, ...caption } } : clip
+          clip.id === clipId ? { ...clip, caption: { ...(clip.caption || { text: '', stylePreset: 'social' }), ...caption } } : clip
         ),
       })),
     }));
@@ -540,6 +584,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
               id: kfId,
               time: relTime,
               transform: { ...clip.transform },
+              easing: 'linear',
             };
             return { ...clip, keyframes: [...clip.keyframes, newKf] };
           }
@@ -565,6 +610,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     get().saveProjectToDB();
   },
 
+  groupSelectedClips: () => {
+    const { selectedClipIds, tracks } = get();
+    if (selectedClipIds.length < 2) return;
+    get().pushHistory();
+    const groupId = `group-${Date.now()}`;
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => (selectedClipIds.includes(c.id) ? { ...c, groupId } : c)),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
+  ungroupSelectedClips: () => {
+    const { selectedClipIds, tracks } = get();
+    if (selectedClipIds.length === 0) return;
+    get().pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => (selectedClipIds.includes(c.id) ? { ...c, groupId: undefined } : c)),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
   splitSelectedClip: () => {
     const { selectedClipId, currentTime, tracks } = get();
     if (!selectedClipId) return;
@@ -573,12 +645,18 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       const clip = track.clips.find((c) => c.id === selectedClipId);
       if (clip && currentTime > clip.startTime && currentTime < clip.startTime + clip.duration) {
         get().pushHistory();
+
         const firstSegmentDuration = currentTime - clip.startTime;
         const secondSegmentDuration = clip.duration - firstSegmentDuration;
 
-        get().updateClip(clip.id, { duration: firstSegmentDuration });
+        const updatedClips = track.clips.map((c) => {
+          if (c.id === clip.id) {
+            return { ...c, duration: firstSegmentDuration };
+          }
+          return c;
+        });
 
-        get().addClipToTrack(track.id, {
+        const newSecondClipId = get().addClipToTrack(track.id, {
           ...clip,
           id: undefined,
           startTime: currentTime,
@@ -741,8 +819,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   copySelectedClip: () => {
     const { selectedClipIds, tracks } = get();
-    const clipsToCopy: Clip[] = [];
+    if (selectedClipIds.length === 0) return;
 
+    const clipsToCopy: Clip[] = [];
     selectedClipIds.forEach((id) => {
       for (const track of tracks) {
         const clip = track.clips.find((c) => c.id === id);
@@ -819,82 +898,66 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     }
   },
 
-  getProjectDuration: () => {
-    const { tracks } = get();
-    let max = 10;
-    tracks.forEach((t) => {
-      t.clips.forEach((c) => {
-        const end = c.startTime + c.duration;
-        if (end > max) max = end;
-      });
-    });
-    return max;
+  saveProjectToDB: async () => {
+    const { tracks, mediaAssets, markers, aspectRatio } = get();
+    set({ saveStatus: 'Saving...' });
+
+    const serializableAssets = mediaAssets.map((asset) => ({
+      ...asset,
+      src: undefined,
+    }));
+
+    const projectData = {
+      id: 'current_project',
+      updatedAt: Date.now(),
+      aspectRatio,
+      tracks,
+      mediaAssets: serializableAssets,
+      markers,
+    };
+
+    try {
+      await saveProjectStateToIndexedDB(projectData);
+      set({ saveStatus: 'Saved' });
+    } catch (e) {
+      console.error('Failed to save project to IndexedDB:', e);
+      set({ saveStatus: 'Unsaved changes' });
+    }
   },
 
-  saveProjectToDB: () => {
-    set({ saveStatus: 'Saving...' });
-    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+  loadProjectFromDB: async () => {
+    try {
+      const savedData = await loadProjectStateFromIndexedDB();
+      if (!savedData) return;
 
-    saveDebounceTimer = setTimeout(async () => {
-      const { aspectRatio, tracks, mediaAssets, markers } = get();
-      const duration = get().getProjectDuration();
-
-      const stateToSave: ProjectState = {
-        id: 'default_project',
-        name: localStorage.getItem('ak_cut_project_name') || 'Untitled Project',
-        updatedAt: Date.now(),
-        aspectRatio,
-        duration,
-        tracks,
-        mediaAssets,
-        markers,
-      };
-
-      try {
-        await saveProject(stateToSave);
-        set({ saveStatus: 'Saved' });
-      } catch (err) {
-        console.error('Autosave Error:', err);
-        set({ saveStatus: 'Unsaved changes' });
-      }
-    }, 400);
+      const restored = await restoreProjectWithMediaBlobs(savedData);
+      set({
+        aspectRatio: savedData.aspectRatio || '16:9',
+        tracks: restored.tracks,
+        mediaAssets: restored.mediaAssets,
+        markers: savedData.markers || [],
+        history: [restored.tracks],
+        historyIndex: 0,
+        saveStatus: 'Saved',
+      });
+    } catch (e) {
+      console.error('Failed to load project from IndexedDB:', e);
+    }
   },
 
   restoreProjectFromDB: async () => {
-    try {
-      const state = await loadProject();
-      if (state) {
-        const restored = await restoreProjectWithMediaBlobs(state);
-        set({
-          aspectRatio: state.aspectRatio || '16:9',
-          tracks: restored.tracks || state.tracks,
-          mediaAssets: restored.mediaAssets || state.mediaAssets,
-          markers: state.markers || [],
-          saveStatus: 'Saved',
-        });
-      }
-    } catch (e) {
-      console.error('Failed to restore project state:', e);
-    }
+    return get().loadProjectFromDB();
   },
 
-  restoreProjectData: async (projectState: any) => {
-    try {
-      const restored = await restoreProjectWithMediaBlobs(projectState);
-      set({
-        aspectRatio: projectState.aspectRatio || '16:9',
-        tracks: restored.tracks || projectState.tracks,
-        mediaAssets: restored.mediaAssets || projectState.mediaAssets,
-        markers: projectState.markers || [],
-        saveStatus: 'Saved',
+  getProjectDuration: () => {
+    const { tracks } = get();
+    let maxTime = 0;
+    tracks.forEach((track) => {
+      track.clips.forEach((clip) => {
+        const end = clip.startTime + clip.duration;
+        if (end > maxTime) maxTime = end;
       });
-      get().saveProjectToDB();
-    } catch (e) {
-      console.error('Failed to restore project data:', e);
-    }
-  },
-
-  loadDemoProject: () => {
-    set({ saveStatus: 'Saved' });
+    });
+    return maxTime > 0 ? maxTime : 60;
   },
 }));

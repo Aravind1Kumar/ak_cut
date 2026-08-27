@@ -107,12 +107,15 @@ export interface TransitionProps {
   duration: number; // seconds
 }
 
+export type KeyframeEasing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+
 export interface Keyframe {
   id: string;
   time: number; // relative to clip start (seconds)
   transform: Partial<TransformProps>;
   filter?: Partial<FilterProps>;
   audio?: Partial<AudioProps>;
+  easing?: KeyframeEasing;
 }
 
 export interface ChromaKeyProps {
@@ -124,7 +127,7 @@ export interface ChromaKeyProps {
   spillReduction?: number; // 0.0 - 1.0 (green/blue spill cleanup)
 }
 
-export type MaskType = 'none' | 'rectangle' | 'circle' | 'line';
+export type MaskType = 'none' | 'rectangle' | 'circle' | 'line' | 'linearGradient' | 'radialGradient';
 
 export interface MaskProps {
   type: MaskType;
@@ -135,6 +138,7 @@ export interface MaskProps {
   rotation: number; // degrees
   feather: number;  // pixels blur
   inverted?: boolean;
+  opacity?: number;
 }
 
 export interface TimelineMarker {
@@ -218,6 +222,7 @@ export interface Clip {
   src: string;
   speed: number;
   speedCurve?: SpeedCurveType;
+  groupId?: string;
 
   transform: TransformProps;
   filter: FilterProps;
