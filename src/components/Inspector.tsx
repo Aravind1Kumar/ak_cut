@@ -24,12 +24,14 @@ import {
   Zap,
   Bookmark,
   Gauge,
+  Activity,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { BlendMode, CaptionStyle, FilterProps, KeyframeEasing, SpeedCurveType } from '../types/timeline';
 import { DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
 import { normalizeClipAudioGain } from '../utils/audioNormalizeEngine';
 import { SPEED_CURVE_PRESETS } from '../utils/speedEngine';
+import { applyMotionPresetToClip, MotionPresetType } from '../utils/motionEngine';
 
 let copiedFilterProps: FilterProps | null = null;
 let copiedCaptionStyle: CaptionStyle | null = null;
@@ -93,7 +95,7 @@ export const Inspector: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-gray-500">
           <Sliders className="w-12 h-12 text-gray-600 mb-3 stroke-1" />
           <h3 className="text-sm font-bold text-gray-300 mb-1">No Clip Selected</h3>
-          <p className="text-xs text-gray-500">Click a clip on the timeline to edit properties, keyframes, transforms, or speed curves.</p>
+          <p className="text-xs text-gray-500">Click a clip on the timeline to edit properties, keyframes, motion presets, or filters.</p>
         </div>
       </aside>
     );
@@ -104,6 +106,14 @@ export const Inspector: React.FC = () => {
     const normVolume = await normalizeClipAudioGain(selectedClip);
     beginTransaction();
     updateClipAudio(selectedClip.id, { volume: normVolume });
+    commitTransaction();
+  };
+
+  const handleApplyMotionPreset = (preset: MotionPresetType) => {
+    if (!selectedClip) return;
+    beginTransaction();
+    const newKfs = applyMotionPresetToClip(selectedClip, preset);
+    updateClip(selectedClip.id, { keyframes: newKfs });
     commitTransaction();
   };
 
@@ -220,13 +230,41 @@ export const Inspector: React.FC = () => {
         >
           <span className="flex items-center space-x-1.5">
             <Zap className="w-4 h-4 text-cyan-400" />
-            <span>Keyframes & Easing ({selectedClip.keyframes?.length || 0})</span>
+            <span>Keyframes & Motion ({selectedClip.keyframes?.length || 0})</span>
           </span>
           {openSections.keyframes ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
 
         {openSections.keyframes && (
           <div className="p-3 space-y-3">
+            {/* Motion Presets Grid */}
+            <div>
+              <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block mb-1.5 flex items-center space-x-1">
+                <Activity className="w-3 h-3" />
+                <span>Quick Motion Presets</span>
+              </span>
+              <div className="grid grid-cols-4 gap-1">
+                {[
+                  { label: 'Fade In', key: 'fadeIn' },
+                  { label: 'Fade Out', key: 'fadeOut' },
+                  { label: 'Zoom In', key: 'zoomIn' },
+                  { label: 'Zoom Out', key: 'zoomOut' },
+                  { label: 'Pan L', key: 'panLeft' },
+                  { label: 'Pan R', key: 'panRight' },
+                  { label: 'Pop', key: 'pop' },
+                  { label: 'Bounce', key: 'bounce' },
+                ].map((item) => (
+                  <button
+                    key={item.key}
+                    onClick={() => handleApplyMotionPreset(item.key as MotionPresetType)}
+                    className="py-1 px-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-[10px] font-semibold text-gray-300 rounded text-center truncate"
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={() => addKeyframeToClip(selectedClip!.id)}
               className="w-full py-1.5 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs rounded-xl transition flex items-center justify-center space-x-1.5"
