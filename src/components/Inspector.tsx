@@ -57,18 +57,27 @@ const SUPPORTED_FONTS = [
   'Impact, sans-serif',
 ];
 
-const COLOR_SWATCHES = ['#ffffff', '#000000', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff'];
+const COLOR_SWATCHES = [
+  { name: 'White', hex: '#ffffff' },
+  { name: 'Black', hex: '#000000' },
+  { name: 'Red', hex: '#ff0000' },
+  { name: 'Green', hex: '#00ff00' },
+  { name: 'Blue', hex: '#0000ff' },
+  { name: 'Yellow', hex: '#ffff00' },
+  { name: 'Cyan', hex: '#00ffff' },
+  { name: 'Magenta', hex: '#ff00ff' },
+];
 
 export const Inspector: React.FC = () => {
   const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({
     text: true,
-    keyframes: true,
-    speed: true,
-    transform: true,
-    filter: true,
-    effects: true,
-    chromaKey: true,
-    audio: true,
+    keyframes: false,
+    speed: false,
+    transform: false,
+    filter: false,
+    effects: false,
+    chromaKey: false,
+    audio: false,
   });
 
   const {
@@ -182,7 +191,7 @@ export const Inspector: React.FC = () => {
   };
 
   return (
-    <aside className="w-80 bg-dark-900 border-l border-dark-700 flex flex-col p-4 select-none shrink-0 overflow-y-auto space-y-4">
+    <aside className="w-80 bg-dark-900 border-l border-dark-700 flex flex-col p-4 select-none shrink-0 overflow-y-auto max-h-full space-y-4">
       {/* Header Info */}
       <div className="border-b border-dark-700 pb-3 flex items-center justify-between">
         <div>
@@ -218,43 +227,24 @@ export const Inspector: React.FC = () => {
 
       {/* DEDICATED TEXT & TYPOGRAPHY SECTION */}
       {selectedClip.type === 'text' && (
-        <div className="border border-cyan-500/40 rounded-xl bg-dark-900/60 overflow-hidden shadow-lg">
+        <div className="border border-cyan-500/40 rounded-xl bg-dark-900/90 overflow-hidden shadow-xl flex flex-col">
           <button
             onClick={() => toggleSection('text')}
             className="w-full px-3 py-2.5 bg-cyan-500/10 flex items-center justify-between text-xs font-bold text-cyan-300 uppercase tracking-wider border-b border-cyan-500/20"
           >
             <span className="flex items-center space-x-1.5">
               <Type className="w-4 h-4 text-cyan-400" />
-              <span>Text & Typography</span>
+              <span>TEXT & TYPOGRAPHY</span>
             </span>
             {openSections.text ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
 
           {openSections.text && (
-            <div className="p-3 space-y-4">
-              {/* Text Presets */}
-              <div>
-                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block mb-1.5 flex items-center space-x-1">
-                  <SparklesIcon className="w-3 h-3" />
-                  <span>Text Style Presets</span>
-                </span>
-                <div className="grid grid-cols-4 gap-1">
-                  {Object.entries(TEXT_PRESETS).map(([key, val]) => (
-                    <button
-                      key={key}
-                      onClick={() => handleApplyTextPreset(key)}
-                      className="py-1 px-1 bg-dark-800 hover:bg-dark-700 border border-dark-700 hover:border-cyan-500 text-[9px] font-bold text-gray-200 rounded text-center truncate"
-                    >
-                      {val.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Text Content Input Area */}
+            <div className="p-3 space-y-4 overflow-y-auto max-h-[calc(100vh-200px)]">
+              {/* 1. Text Content Input Area */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-semibold text-gray-400">Text Content (Multiline)</span>
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Text Content (Multiline)</span>
                   <button
                     onClick={() => setEditingTextClipId(selectedClip!.id)}
                     className="text-[10px] text-cyan-400 hover:underline font-bold"
@@ -265,15 +255,15 @@ export const Inspector: React.FC = () => {
                 <textarea
                   value={currentText.content}
                   onChange={(e) => updateClipText(selectedClip!.id, { content: e.target.value })}
-                  rows={3}
+                  rows={2}
                   className="w-full bg-dark-800 border border-dark-700 rounded-xl p-2.5 text-xs text-white outline-none focus:border-cyan-500 font-sans resize-none"
                   placeholder="Type text content here..."
                 />
               </div>
 
-              {/* WORD-PROCESSOR STYLE TYPOGRAPHY TOOLBAR */}
+              {/* 2. WORD-PROCESSOR STYLE TYPOGRAPHY TOOLBAR */}
               <div className="p-3 bg-dark-800/90 border border-dark-700 rounded-xl space-y-3 shadow-inner">
-                {/* Row 1: Font Family & Size */}
+                {/* Row A: Font Family & Size */}
                 <div className="flex items-center space-x-2">
                   <div className="flex-1">
                     <label className="text-[10px] font-bold text-gray-400 block mb-0.5">FONT</label>
@@ -283,7 +273,7 @@ export const Inspector: React.FC = () => {
                         pushHistory();
                         updateClipText(selectedClip!.id, { fontFamily: e.target.value });
                       }}
-                      className="w-full bg-dark-900 border border-dark-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-500 font-medium"
+                      className="w-full bg-dark-900 border border-dark-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-500 font-medium cursor-pointer"
                     >
                       {SUPPORTED_FONTS.map((font) => (
                         <option key={font} value={font}>
@@ -312,7 +302,7 @@ export const Inspector: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Font Size Slider */}
+                {/* Font Size Range Slider */}
                 <div>
                   <input
                     type="range"
@@ -327,7 +317,7 @@ export const Inspector: React.FC = () => {
                   />
                 </div>
 
-                {/* Row 2: Formatting Buttons [ B ] [ I ] [ U ] & Alignment [ Left ] [ Center ] [ Right ] */}
+                {/* Row B: Formatting Buttons [ B ] [ I ] [ U ] & Alignment [ Left ] [ Center ] [ Right ] */}
                 <div className="flex items-center justify-between gap-2 pt-1 border-t border-dark-700/60">
                   {/* Style B I U */}
                   <div className="flex items-center space-x-1 bg-dark-900 p-1 rounded-xl border border-dark-700">
@@ -338,10 +328,10 @@ export const Inspector: React.FC = () => {
                       }}
                       className={`w-8 h-8 rounded-lg transition font-bold text-xs flex items-center justify-center ${
                         currentText.bold
-                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-extrabold'
+                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-extrabold ring-1 ring-cyan-400'
                           : 'text-gray-400 hover:text-white hover:bg-dark-800'
                       }`}
-                      title="Bold (Ctrl+B)"
+                      title="Bold (B)"
                     >
                       <Bold className="w-4 h-4 stroke-[2.5]" />
                     </button>
@@ -352,10 +342,10 @@ export const Inspector: React.FC = () => {
                       }}
                       className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
                         currentText.italic
-                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold'
+                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold ring-1 ring-cyan-400'
                           : 'text-gray-400 hover:text-white hover:bg-dark-800'
                       }`}
-                      title="Italic (Ctrl+I)"
+                      title="Italic (I)"
                     >
                       <Italic className="w-4 h-4 stroke-[2.5]" />
                     </button>
@@ -366,10 +356,10 @@ export const Inspector: React.FC = () => {
                       }}
                       className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
                         currentText.underline
-                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold'
+                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold ring-1 ring-cyan-400'
                           : 'text-gray-400 hover:text-white hover:bg-dark-800'
                       }`}
-                      title="Underline (Ctrl+U)"
+                      title="Underline (U)"
                     >
                       <Underline className="w-4 h-4 stroke-[2.5]" />
                     </button>
@@ -386,7 +376,7 @@ export const Inspector: React.FC = () => {
                         }}
                         className={`w-8 h-8 rounded-lg transition flex items-center justify-center ${
                           currentText.alignment === align
-                            ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold'
+                            ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold ring-1 ring-cyan-400'
                             : 'text-gray-400 hover:text-white hover:bg-dark-800'
                         }`}
                         title={`Align ${align.charAt(0).toUpperCase() + align.slice(1)}`}
@@ -403,21 +393,23 @@ export const Inspector: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Row 3: Text Color Picker + Editable HEX Input + Fast Swatches */}
+                {/* Row C: Text Color Picker + Editable HEX Input */}
                 <div className="pt-2 border-t border-dark-700/60 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">TEXT COLOR</span>
-                    <div className="flex items-center space-x-2 bg-dark-900 px-2 py-1 rounded-lg border border-dark-700">
-                      <input
-                        type="color"
-                        value={currentText.color && currentText.color.startsWith('#') && currentText.color.length === 7 ? currentText.color : '#ffffff'}
-                        onChange={(e) => {
-                          updateClipText(selectedClip!.id, { color: e.target.value });
-                        }}
-                        onMouseDown={() => pushHistory()}
-                        className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent"
-                        title="Choose Color"
-                      />
+                    <div className="flex items-center space-x-2 bg-dark-900 px-2 py-1.5 rounded-lg border border-dark-700">
+                      <div className="relative w-6 h-6 rounded border border-dark-600 overflow-hidden cursor-pointer flex items-center justify-center">
+                        <input
+                          type="color"
+                          value={currentText.color && currentText.color.startsWith('#') && currentText.color.length === 7 ? currentText.color : '#ffffff'}
+                          onChange={(e) => {
+                            updateClipText(selectedClip!.id, { color: e.target.value });
+                          }}
+                          onMouseDown={() => pushHistory()}
+                          className="absolute -inset-2 w-10 h-10 cursor-pointer border-0 bg-transparent opacity-100"
+                          title="Click to open color picker"
+                        />
+                      </div>
                       <input
                         type="text"
                         value={currentText.color}
@@ -430,29 +422,35 @@ export const Inspector: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Color Swatches Grid */}
-                  <div className="flex items-center justify-between gap-1 pt-1">
-                    {COLOR_SWATCHES.map((swatch) => (
-                      <button
-                        key={swatch}
-                        onClick={() => {
-                          pushHistory();
-                          updateClipText(selectedClip!.id, { color: swatch });
-                        }}
-                        className={`w-6 h-6 rounded-full border border-dark-700 transition transform hover:scale-110 flex items-center justify-center ${
-                          currentText.color.toLowerCase() === swatch.toLowerCase() ? 'ring-2 ring-cyan-400 ring-offset-2 ring-offset-dark-900' : ''
-                        }`}
-                        style={{ backgroundColor: swatch }}
-                        title={swatch}
-                      />
-                    ))}
+                  {/* Row D: Quick Color Swatches Grid */}
+                  <div>
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider block mb-1">QUICK COLORS</span>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {COLOR_SWATCHES.map((swatch) => (
+                        <button
+                          key={swatch.hex}
+                          onClick={() => {
+                            pushHistory();
+                            updateClipText(selectedClip!.id, { color: swatch.hex });
+                          }}
+                          className={`py-1 px-1.5 rounded-lg border border-dark-700 text-[10px] font-bold transition flex items-center space-x-1.5 ${
+                            currentText.color.toLowerCase() === swatch.hex.toLowerCase()
+                              ? 'ring-2 ring-cyan-400 bg-dark-800'
+                              : 'bg-dark-900/80 hover:bg-dark-800'
+                          }`}
+                        >
+                          <span className="w-3.5 h-3.5 rounded-full border border-dark-600 shrink-0" style={{ backgroundColor: swatch.hex }} />
+                          <span className="text-gray-300 text-[9px] truncate">{swatch.name}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Row 4: Letter Spacing & Line Height */}
+                {/* Row E: Letter Spacing & Line Height */}
                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-dark-700/60">
                   <div>
-                    <span className="text-[10px] font-bold text-gray-400 block mb-1">SPACING ({currentText.letterSpacing || 0}px)</span>
+                    <span className="text-[10px] font-bold text-gray-400 block mb-1">LETTER SPACING ({currentText.letterSpacing || 0}px)</span>
                     <input
                       type="range"
                       min="-10"
@@ -479,7 +477,26 @@ export const Inspector: React.FC = () => {
                 </div>
               </div>
 
-              {/* Background Box Settings */}
+              {/* 3. Text Style Presets Grid */}
+              <div className="p-3 bg-dark-800/60 border border-dark-700 rounded-xl space-y-2">
+                <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block flex items-center space-x-1">
+                  <SparklesIcon className="w-3 h-3" />
+                  <span>Text Style Presets</span>
+                </span>
+                <div className="grid grid-cols-4 gap-1">
+                  {Object.entries(TEXT_PRESETS).map(([key, val]) => (
+                    <button
+                      key={key}
+                      onClick={() => handleApplyTextPreset(key)}
+                      className="py-1 px-1 bg-dark-900 hover:bg-dark-800 border border-dark-700 hover:border-cyan-500 text-[9px] font-bold text-gray-200 rounded-lg text-center truncate"
+                    >
+                      {val.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 4. Background Box Settings */}
               <div className="p-2.5 bg-dark-800/80 border border-dark-700 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-200">Background Box</span>
@@ -521,7 +538,7 @@ export const Inspector: React.FC = () => {
                 )}
               </div>
 
-              {/* Outline Settings */}
+              {/* 5. Outline Settings */}
               <div className="p-2.5 bg-dark-800/80 border border-dark-700 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-200">Outline Stroke</span>
@@ -563,7 +580,7 @@ export const Inspector: React.FC = () => {
                 )}
               </div>
 
-              {/* Drop Shadow Settings */}
+              {/* 6. Drop Shadow Settings */}
               <div className="p-2.5 bg-dark-800/80 border border-dark-700 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-200">Drop Shadow</span>
@@ -605,7 +622,7 @@ export const Inspector: React.FC = () => {
                 )}
               </div>
 
-              {/* Copy / Paste Style */}
+              {/* 7. Copy / Paste Style */}
               <div className="flex items-center space-x-2 pt-1">
                 <button
                   onClick={copySelectedClipTextStyle}
@@ -627,6 +644,87 @@ export const Inspector: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* TRANSFORM SECTION */}
+      <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+        <button
+          onClick={() => toggleSection('transform')}
+          className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+        >
+          <span className="flex items-center space-x-1.5">
+            <Maximize2 className="w-4 h-4 text-cyan-400" />
+            <span>Transform & Layout</span>
+          </span>
+          {openSections.transform ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
+
+        {openSections.transform && (
+          <div className="p-3 space-y-3">
+            {/* Scale Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">
+                  Scale ({Math.round(selectedClip.transform.scale * 100)}%)
+                </span>
+                <button onClick={() => resetProperty('scale')} className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5">
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="3.0"
+                step="0.05"
+                value={selectedClip.transform.scale}
+                onChange={(e) => updateClipTransform(selectedClip!.id, { scale: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+              />
+            </div>
+
+            {/* Rotation Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">Rotation ({selectedClip.transform.rotation}°)</span>
+                <button onClick={() => resetProperty('rotation')} className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5">
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <input
+                type="range"
+                min="-180"
+                max="180"
+                value={selectedClip.transform.rotation}
+                onChange={(e) => updateClipTransform(selectedClip!.id, { rotation: parseInt(e.target.value, 10) })}
+                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+              />
+            </div>
+
+            {/* Opacity Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">
+                  Opacity ({Math.round(selectedClip.transform.opacity * 100)}%)
+                </span>
+                <button onClick={() => resetProperty('opacity')} className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5">
+                  <RotateCcw className="w-2.5 h-2.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+              <input
+                type="range"
+                min="0.0"
+                max="1.0"
+                step="0.02"
+                value={selectedClip.transform.opacity}
+                onChange={(e) => updateClipTransform(selectedClip!.id, { opacity: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+              />
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* SPEED & RAMPING SECTION */}
       {(selectedClip.type === 'video' || selectedClip.type === 'audio') && (
@@ -764,87 +862,6 @@ export const Inspector: React.FC = () => {
                 ))}
               </div>
             )}
-          </div>
-        )}
-      </div>
-
-      {/* TRANSFORM SECTION */}
-      <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
-        <button
-          onClick={() => toggleSection('transform')}
-          className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
-        >
-          <span className="flex items-center space-x-1.5">
-            <Maximize2 className="w-4 h-4 text-cyan-400" />
-            <span>Transform & Layout</span>
-          </span>
-          {openSections.transform ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </button>
-
-        {openSections.transform && (
-          <div className="p-3 space-y-3">
-            {/* Scale Slider */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-semibold text-gray-400">
-                  Scale ({Math.round(selectedClip.transform.scale * 100)}%)
-                </span>
-                <button onClick={() => resetProperty('scale')} className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5">
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="3.0"
-                step="0.05"
-                value={selectedClip.transform.scale}
-                onChange={(e) => updateClipTransform(selectedClip!.id, { scale: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-              />
-            </div>
-
-            {/* Rotation Slider */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-semibold text-gray-400">Rotation ({selectedClip.transform.rotation}°)</span>
-                <button onClick={() => resetProperty('rotation')} className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5">
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-              <input
-                type="range"
-                min="-180"
-                max="180"
-                value={selectedClip.transform.rotation}
-                onChange={(e) => updateClipTransform(selectedClip!.id, { rotation: parseInt(e.target.value, 10) })}
-                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-              />
-            </div>
-
-            {/* Opacity Slider */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-semibold text-gray-400">
-                  Opacity ({Math.round(selectedClip.transform.opacity * 100)}%)
-                </span>
-                <button onClick={() => resetProperty('opacity')} className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5">
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-              <input
-                type="range"
-                min="0.0"
-                max="1.0"
-                step="0.02"
-                value={selectedClip.transform.opacity}
-                onChange={(e) => updateClipTransform(selectedClip!.id, { opacity: parseFloat(e.target.value) })}
-                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-              />
-            </div>
           </div>
         )}
       </div>
