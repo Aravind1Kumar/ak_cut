@@ -426,6 +426,16 @@ export async function exportVideoProject(
 
     let hasAudioClips = false;
 
+    // Collect all voiceover/speech clips for ducking calculations
+    const speechClips: Clip[] = [];
+    tracks.forEach((t) => {
+      if (!t.muted && t.type === 'audio') {
+        t.clips.forEach((c) => {
+          if (!c.audio.muted) speechClips.push(c);
+        });
+      }
+    });
+
     for (const track of tracks) {
       if (track.muted) continue;
 
@@ -440,7 +450,19 @@ export async function exportVideoProject(
             source.buffer = decodedBuf;
 
             const gainNode = offlineCtx.createGain();
-            const vol = clip.audio.volume ?? 1;
+            let vol = clip.audio.volume ?? 1;
+
+            // Apply Ducking if enabled
+            if (clip.audio.ducking?.enabled) {
+              const reduction = (clip.audio.ducking.duckingAmount || 50) / 100;
+              const hasSpeechOverlap = speechClips.some(
+                (sc) => sc.id !== clip.id && sc.startTime < clip.startTime + clip.duration && sc.startTime + sc.duration > clip.startTime
+              );
+              if (hasSpeechOverlap) {
+                vol = vol * (1 - reduction);
+              }
+            }
+
             gainNode.gain.setValueAtTime(vol, clip.startTime);
 
             if (clip.audio.fadeIn > 0) {
@@ -455,7 +477,16 @@ export async function exportVideoProject(
             }
 
             source.connect(gainNode);
-            gainNode.connect(offlineCtx.destination);
+
+            // Apply Stereo Panning
+            if ('createStereoPanner' in offlineCtx && clip.audio.pan !== undefined && clip.audio.pan !== 0) {
+              const panner = offlineCtx.createStereoPanner();
+              panner.pan.setValueAtTime(Math.max(-1, Math.min(1, clip.audio.pan / 100)), clip.startTime);
+              gainNode.connect(panner);
+              panner.connect(offlineCtx.destination);
+            } else {
+              gainNode.connect(offlineCtx.destination);
+            }
 
             source.start(clip.startTime, clip.mediaOffset, clip.duration);
             hasAudioClips = true;

@@ -20,6 +20,7 @@ import {
   Thermometer,
   Layers,
   Palette,
+  Music,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
@@ -55,6 +56,7 @@ export const Inspector: React.FC = () => {
     updateClipCaption,
     addKeyframeToClip,
     freezeFrameSelectedClip,
+    detachAudioFromSelectedClip,
     addClipToTrack,
     beginTransaction,
     commitTransaction,
@@ -157,7 +159,7 @@ export const Inspector: React.FC = () => {
     else if (prop === 'scale') updateClipTransform(selectedClip!.id, { scale: 1.0, flipHorizontal: false, flipVertical: false, cropTop: 0, cropBottom: 0, cropLeft: 0, cropRight: 0 });
     else if (prop === 'rotation') updateClipTransform(selectedClip!.id, { rotation: 0 });
     else if (prop === 'opacity') updateClipTransform(selectedClip!.id, { opacity: 1.0 });
-    else if (prop === 'volume') updateClipAudio(selectedClip!.id, { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false });
+    else if (prop === 'volume') updateClipAudio(selectedClip!.id, { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false, pan: 0, ducking: { enabled: false, duckingAmount: 50 } });
     else if (prop === 'filter') updateClipFilter(selectedClip!.id, { brightness: 100, contrast: 100, saturation: 100, blur: 0, hueRotate: 0, sepia: 0, exposure: 0, temperature: 0, tint: 0, fade: 0, vignette: 0, glow: 0, colorShift: 0, presetKey: 'original', presetIntensity: 100 });
     commitTransaction();
   };
@@ -428,7 +430,7 @@ export const Inspector: React.FC = () => {
         )}
       </div>
 
-      {/* VIDEO EFFECTS SECTION (Vignette, Glow, Blur, Color Shift) */}
+      {/* VIDEO EFFECTS SECTION */}
       {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
         <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
           <button
@@ -504,132 +506,6 @@ export const Inspector: React.FC = () => {
         </div>
       )}
 
-      {/* COLOR & FILTERS SECTION */}
-      {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
-        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
-          <button
-            onClick={() => toggleSection('filter')}
-            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
-          >
-            <span>Color Adjustments & Filters</span>
-            {openSections.filter ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
-
-          {openSections.filter && (
-            <div className="p-3 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-gray-400">Color Profile</span>
-                <button
-                  onClick={() => resetProperty('filter')}
-                  className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5"
-                >
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Reset All</span>
-                </button>
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Exposure ({selectedClip.filter.exposure || 0})
-                </span>
-                <input
-                  type="range"
-                  min="-100"
-                  max="100"
-                  value={selectedClip.filter.exposure || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { exposure: parseInt(e.target.value, 10) })}
-                  className="w-full accent-amber-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Temperature ({selectedClip.filter.temperature || 0})
-                </span>
-                <input
-                  type="range"
-                  min="-100"
-                  max="100"
-                  value={selectedClip.filter.temperature || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { temperature: parseInt(e.target.value, 10) })}
-                  className="w-full accent-blue-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Tint ({selectedClip.filter.tint || 0})
-                </span>
-                <input
-                  type="range"
-                  min="-100"
-                  max="100"
-                  value={selectedClip.filter.tint || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { tint: parseInt(e.target.value, 10) })}
-                  className="w-full accent-emerald-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Fade ({selectedClip.filter.fade || 0}%)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={selectedClip.filter.fade || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { fade: parseInt(e.target.value, 10) })}
-                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Brightness ({selectedClip.filter.brightness}%)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="200"
-                  value={selectedClip.filter.brightness}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { brightness: parseInt(e.target.value, 10) })}
-                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Contrast ({selectedClip.filter.contrast}%)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="200"
-                  value={selectedClip.filter.contrast}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { contrast: parseInt(e.target.value, 10) })}
-                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Saturation ({selectedClip.filter.saturation}%)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="200"
-                  value={selectedClip.filter.saturation}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { saturation: parseInt(e.target.value, 10) })}
-                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* AUDIO SECTION */}
       {(selectedClip.type === 'video' || selectedClip.type === 'audio') && (
         <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
@@ -637,12 +513,25 @@ export const Inspector: React.FC = () => {
             onClick={() => toggleSection('audio')}
             className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
           >
-            <span>Audio Controls & Fades</span>
+            <span className="flex items-center space-x-1.5">
+              <Music className="w-4 h-4 text-green-400" />
+              <span>Audio Controls & Ducking</span>
+            </span>
             {openSections.audio ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
           </button>
 
           {openSections.audio && (
             <div className="p-3 space-y-3">
+              {selectedClip.type === 'video' && (
+                <button
+                  onClick={detachAudioFromSelectedClip}
+                  className="w-full py-1.5 px-2.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5"
+                >
+                  <Music className="w-3.5 h-3.5" />
+                  <span>Detach Audio Track</span>
+                </button>
+              )}
+
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-gray-300">Mute Audio</span>
                 <button
@@ -678,6 +567,100 @@ export const Inspector: React.FC = () => {
                   onChange={(e) => updateClipAudio(selectedClip!.id, { volume: parseFloat(e.target.value) })}
                   className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
                 />
+              </div>
+
+              {/* Fade Controls */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                    Fade In ({selectedClip.audio.fadeIn || 0}s)
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5.0"
+                    step="0.2"
+                    value={selectedClip.audio.fadeIn || 0}
+                    onChange={(e) => updateClipAudio(selectedClip!.id, { fadeIn: parseFloat(e.target.value) })}
+                    className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                    Fade Out ({selectedClip.audio.fadeOut || 0}s)
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5.0"
+                    step="0.2"
+                    value={selectedClip.audio.fadeOut || 0}
+                    onChange={(e) => updateClipAudio(selectedClip!.id, { fadeOut: parseFloat(e.target.value) })}
+                    className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Stereo Pan Control */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Stereo Pan ({selectedClip.audio.pan || 0 > 0 ? `R ${selectedClip.audio.pan}` : selectedClip.audio.pan || 0 < 0 ? `L ${Math.abs(selectedClip.audio.pan || 0)}` : 'Center'})
+                </span>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={selectedClip.audio.pan || 0}
+                  onChange={(e) => updateClipAudio(selectedClip!.id, { pan: parseInt(e.target.value, 10) })}
+                  className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              {/* Audio Ducking Section */}
+              <div className="pt-2 border-t border-dark-700/60 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-gray-300 uppercase tracking-wider">Audio Ducking</span>
+                  <button
+                    onClick={() =>
+                      updateClipAudio(selectedClip!.id, {
+                        ducking: {
+                          enabled: !selectedClip!.audio.ducking?.enabled,
+                          duckingAmount: selectedClip!.audio.ducking?.duckingAmount ?? 50,
+                        },
+                      })
+                    }
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition ${
+                      selectedClip.audio.ducking?.enabled
+                        ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                        : 'bg-dark-800 text-gray-400 border border-dark-700'
+                    }`}
+                  >
+                    {selectedClip.audio.ducking?.enabled ? 'Ducking ON' : 'Ducking OFF'}
+                  </button>
+                </div>
+
+                {selectedClip.audio.ducking?.enabled && (
+                  <div>
+                    <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                      Background Reduction ({selectedClip.audio.ducking?.duckingAmount || 50}%)
+                    </span>
+                    <input
+                      type="range"
+                      min="10"
+                      max="90"
+                      value={selectedClip.audio.ducking?.duckingAmount || 50}
+                      onChange={(e) =>
+                        updateClipAudio(selectedClip!.id, {
+                          ducking: {
+                            enabled: true,
+                            duckingAmount: parseInt(e.target.value, 10),
+                          },
+                        })
+                      }
+                      className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}

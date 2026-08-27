@@ -15,11 +15,13 @@ import {
   Edit3,
   Wand2,
   FileText,
+  Mic,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { AspectRatio } from '../types/timeline';
 import { GenerateCaptionsModal } from './GenerateCaptionsModal';
 import { TranscriptEditor } from './TranscriptEditor';
+import { VoiceoverModal } from './VoiceoverModal';
 
 interface HeaderProps {
   onOpenExportModal?: () => void;
@@ -41,6 +43,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
   const [isEditingName, setIsEditingName] = useState(false);
   const [isCaptionsModalOpen, setIsCaptionsModalOpen] = useState(false);
   const [isTranscriptEditorOpen, setIsTranscriptEditorOpen] = useState(false);
+  const [isVoiceoverModalOpen, setIsVoiceoverModalOpen] = useState(false);
 
   const {
     saveStatus,
@@ -59,73 +62,68 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
     saveProjectToDB,
   } = useTimelineStore();
 
-  useEffect(() => {
-    const savedName = localStorage.getItem('ak_cut_project_name');
-    if (savedName) setProjectName(savedName);
-  }, []);
-
-  const handleSaveName = () => {
-    localStorage.setItem('ak_cut_project_name', projectName);
-    setIsEditingName(false);
-    saveProjectToDB();
-  };
-
   return (
-    <header className="h-14 bg-dark-900 border-b border-dark-700 px-4 flex items-center justify-between select-none z-30">
-      {/* Brand Logo & Editable Project Name */}
+    <header className="h-14 bg-dark-900 border-b border-dark-700/80 px-4 flex items-center justify-between select-none z-30 relative">
+      {/* Brand & Project Title */}
       <div className="flex items-center space-x-3">
-        <button
-          onClick={toggleLeftPanel}
-          className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-dark-800 rounded-lg transition"
-          title="Toggle Left Panel"
-        >
-          {isLeftPanelOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
-        </button>
-
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
-            <Scissors className="w-4 h-4 text-white transform -rotate-45" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              {isEditingName ? (
-                <input
-                  type="text"
-                  autoFocus
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  onBlur={handleSaveName}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleSaveName();
-                  }}
-                  className="bg-dark-800 text-xs font-bold text-white px-2 py-0.5 border border-cyan-500 rounded outline-none"
-                />
-              ) : (
-                <div
-                  onClick={() => setIsEditingName(true)}
-                  className="flex items-center space-x-1.5 cursor-pointer group"
-                  title="Click to edit project name"
-                >
-                  <h1 className="text-sm font-black text-white tracking-wide group-hover:text-cyan-400 transition">
-                    {projectName}
-                  </h1>
-                  <Edit3 className="w-3 h-3 text-gray-500 group-hover:text-cyan-400 transition opacity-0 group-hover:opacity-100" />
-                </div>
-              )}
+          <button
+            onClick={toggleLeftPanel}
+            className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-800 rounded-lg transition"
+            title={isLeftPanelOpen ? 'Collapse Left Sidebar' : 'Expand Left Sidebar'}
+          >
+            {isLeftPanelOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+          </button>
 
-              <span className="text-[9px] font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5 rounded">
-                PRO 2.0
-              </span>
+          <div className="flex items-center space-x-2">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+              <Scissors className="w-4 h-4 text-white" />
             </div>
-            <div className="text-[10px] text-gray-500 flex items-center space-x-1">
-              <Save className="w-2.5 h-2.5" />
-              <span>{saveStatus}</span>
+            <div className="flex flex-col">
+              <div className="flex items-center space-x-1.5">
+                <span className="text-sm font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-400 tracking-wider">
+                  AK CUT
+                </span>
+
+                {isEditingName ? (
+                  <input
+                    type="text"
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    onBlur={() => setIsEditingName(false)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') setIsEditingName(false);
+                    }}
+                    autoFocus
+                    className="bg-dark-800 text-xs font-bold text-white px-2 py-0.5 border border-cyan-500 rounded outline-none"
+                  />
+                ) : (
+                  <div
+                    onClick={() => setIsEditingName(true)}
+                    className="flex items-center space-x-1.5 cursor-pointer group"
+                    title="Click to edit project name"
+                  >
+                    <h1 className="text-sm font-black text-white tracking-wide group-hover:text-cyan-400 transition">
+                      {projectName}
+                    </h1>
+                    <Edit3 className="w-3 h-3 text-gray-500 group-hover:text-cyan-400 transition opacity-0 group-hover:opacity-100" />
+                  </div>
+                )}
+
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.5 rounded">
+                  PRO 2.0
+                </span>
+              </div>
+              <div className="text-[10px] text-gray-500 flex items-center space-x-1">
+                <Save className="w-2.5 h-2.5" />
+                <span>{saveStatus}</span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Auto Captions & Transcript Editor Action Buttons */}
+      {/* Action Buttons: Auto Captions, Transcript & Voiceover Microphone Recorder */}
       <div className="flex items-center space-x-2">
         <button
           onClick={() => setIsCaptionsModalOpen(true)}
@@ -144,9 +142,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
           <FileText className="w-3.5 h-3.5 text-cyan-400" />
           <span>Transcript</span>
         </button>
+
+        <button
+          onClick={() => setIsVoiceoverModalOpen(true)}
+          className="flex items-center space-x-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-red-400 border border-red-500/30 font-semibold text-xs rounded-xl transition"
+          title="Record Voiceover Microphone Track"
+        >
+          <Mic className="w-3.5 h-3.5 text-red-400" />
+          <span>Voiceover</span>
+        </button>
       </div>
 
-      {/* Undo / Redo & Social Canvas Aspect Ratio Selector */}
+      {/* Undo / Redo, Aspect Ratio & Export */}
       <div className="flex items-center space-x-3">
         <div className="flex items-center space-x-1 bg-dark-800 p-1 rounded-xl border border-dark-700">
           <button
@@ -157,92 +164,60 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
           >
             <Undo2 className="w-4 h-4" />
           </button>
-
           <button
             onClick={redo}
             disabled={historyIndex >= history.length - 1}
             className="p-1.5 text-gray-400 hover:text-white disabled:opacity-30 disabled:hover:text-gray-400 rounded-lg transition"
-            title="Redo (Ctrl+Shift+Z)"
+            title="Redo (Ctrl+Y)"
           >
             <Redo2 className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="flex items-center space-x-1.5 bg-dark-800 px-2 py-1 rounded-xl border border-dark-700">
-          <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-          <select
-            value={aspectRatio}
-            onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
-            className="bg-transparent text-xs font-semibold text-gray-200 outline-none cursor-pointer"
-          >
-            {SOCIAL_ASPECT_RATIOS.map((item) => (
-              <option key={item.ratio} value={item.ratio} className="bg-dark-900 text-gray-100">
-                {item.icon} {item.label}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Layout Mode Switcher & Export Button */}
-      <div className="flex items-center space-x-3">
-        <div className="hidden sm:flex items-center space-x-1 bg-dark-800 p-1 rounded-xl border border-dark-700">
-          <button
-            onClick={() => setLayoutMode('auto')}
-            className={`px-2 py-1 text-xs font-semibold rounded-lg transition ${
-              layoutMode === 'auto' ? 'bg-dark-700 text-cyan-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'
-            }`}
-          >
-            Auto
-          </button>
-          <button
-            onClick={() => setLayoutMode('mobile')}
-            className={`p-1.5 rounded-lg transition ${
-              layoutMode === 'mobile' ? 'bg-dark-700 text-cyan-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'
-            }`}
-            title="Mobile Layout"
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setLayoutMode('desktop')}
-            className={`p-1.5 rounded-lg transition ${
-              layoutMode === 'desktop' ? 'bg-dark-700 text-cyan-400 shadow-sm' : 'text-gray-400 hover:text-gray-200'
-            }`}
-            title="Desktop Layout"
-          >
-            <Monitor className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <button
-          onClick={handleExport}
-          className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-cyan-500/25 transition transform active:scale-95"
-          title="Export Video Project to MP4 (Render Final Video)"
+        <select
+          value={aspectRatio}
+          onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
+          className="bg-dark-800 border border-dark-700 text-xs font-semibold text-gray-200 px-3 py-1.5 rounded-xl outline-none cursor-pointer hover:border-cyan-500 transition"
         >
-          <Download className="w-4 h-4" />
-          <span>Export MP4</span>
-        </button>
+          {SOCIAL_ASPECT_RATIOS.map((item) => (
+            <option key={item.ratio} value={item.ratio}>
+              {item.icon} {item.label}
+            </option>
+          ))}
+        </select>
+
+        {handleExport && (
+          <button
+            onClick={handleExport}
+            className="flex items-center space-x-1.5 px-4 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs rounded-xl shadow-lg transition transform active:scale-95"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export</span>
+          </button>
+        )}
 
         <button
           onClick={toggleRightPanel}
-          className="p-1.5 text-gray-400 hover:text-gray-200 hover:bg-dark-800 rounded-lg transition"
-          title="Toggle Right Inspector"
+          className="p-1.5 text-gray-400 hover:text-white hover:bg-dark-800 rounded-lg transition"
+          title={isRightPanelOpen ? 'Collapse Inspector' : 'Expand Inspector'}
         >
-          {isRightPanelOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
+          {isRightPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
         </button>
       </div>
 
-      {/* Auto Captions Generation Modal */}
       <GenerateCaptionsModal
         isOpen={isCaptionsModalOpen}
         onClose={() => setIsCaptionsModalOpen(false)}
       />
 
-      {/* Interactive Transcript Editor Modal */}
       <TranscriptEditor
         isOpen={isTranscriptEditorOpen}
         onClose={() => setIsTranscriptEditorOpen(false)}
+      />
+
+      <VoiceoverModal
+        isOpen={isVoiceoverModalOpen}
+        onClose={() => setIsVoiceoverModalOpen(false)}
       />
     </header>
   );

@@ -41,11 +41,21 @@ export interface FilterProps {
   enabled?: boolean;
 }
 
+export interface DuckingProps {
+  enabled: boolean;
+  targetTrackId?: string;
+  duckingAmount: number; // 0 to 100% reduction
+}
+
 export interface AudioProps {
   volume: number;     // 0.0 - 2.0 (1.0 = 100%)
   fadeIn: number;     // duration in seconds
   fadeOut: number;    // duration in seconds
   muted: boolean;
+  pan?: number;       // -100 (left) to +100 (right)
+  lowPass?: number;   // cutoff Hz (e.g. 200 - 20000)
+  highPass?: number;  // cutoff Hz (e.g. 20 - 5000)
+  ducking?: DuckingProps;
 }
 
 export interface TextProps {
@@ -85,6 +95,7 @@ export interface Keyframe {
   time: number; // relative to clip start (seconds)
   transform: Partial<TransformProps>;
   filter?: Partial<FilterProps>;
+  audio?: Partial<AudioProps>;
 }
 
 export interface ChromaKeyProps {
