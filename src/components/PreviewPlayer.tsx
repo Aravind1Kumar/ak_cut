@@ -19,6 +19,7 @@ import { renderTransitionEffect, findPreviousClipOnSameTrack } from '../utils/tr
 import { renderCaption, DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
 import { buildCSSFilterString, renderPostProcessingEffects } from '../utils/filterEngine';
 import { renderShape, renderSticker } from '../utils/graphicsEngine';
+import { applyChromaKeyToCanvas } from '../utils/chromaKeyEngine';
 import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
 
 export const PreviewPlayer: React.FC = () => {
@@ -346,6 +347,10 @@ export const PreviewPlayer: React.FC = () => {
         renderShape(ctx, clip.shape, width, height);
       } else if (clip.type === 'sticker' && clip.sticker) {
         renderSticker(ctx, clip.sticker, width, height);
+      }
+
+      if (clip.chromaKey?.enabled) {
+        applyChromaKeyToCanvas(ctx, clip.chromaKey, width, height);
       }
 
       renderPostProcessingEffects(ctx, clip.filter, width, height);

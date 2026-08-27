@@ -120,7 +120,8 @@ export interface ChromaKeyProps {
   targetColor: string; // hex e.g. '#00ff00'
   color?: string;      // alias
   colorDistance: number; // 0.0 - 1.0 (similarity tolerance)
-  smoothness: number;    // 0.0 - 1.0 (feather edge)
+  smoothness: number;    // 0.0 - 1.0 (feather edge softness)
+  spillReduction?: number; // 0.0 - 1.0 (green/blue spill cleanup)
 }
 
 export type MaskType = 'none' | 'rectangle' | 'circle' | 'line';

@@ -6,6 +6,7 @@ import { renderTransitionEffect, findPreviousClipOnSameTrack } from './transitio
 import { renderCaption, DEFAULT_CAPTION_STYLES } from './captionEngine';
 import { buildCSSFilterString, renderPostProcessingEffects } from './filterEngine';
 import { renderShape, renderSticker } from './graphicsEngine';
+import { applyChromaKeyToCanvas } from './chromaKeyEngine';
 import { audioBufferToWav } from './audioWavEncoder';
 import { getSourceTimeForTimelineTime } from './timelineMath';
 
@@ -346,6 +347,10 @@ export async function exportVideoProject(
         renderShape(ctx, clip.shape, width, height);
       } else if (clip.type === 'sticker' && clip.sticker) {
         renderSticker(ctx, clip.sticker, width, height);
+      }
+
+      if (clip.chromaKey?.enabled) {
+        applyChromaKeyToCanvas(ctx, clip.chromaKey, width, height);
       }
 
       renderPostProcessingEffects(ctx, clip.filter, width, height);

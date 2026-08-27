@@ -21,6 +21,8 @@ import {
   Layers,
   Palette,
   Music,
+  Scissors,
+  Eye,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
@@ -37,6 +39,7 @@ export const Inspector: React.FC = () => {
     presetFilter: true,
     filter: true,
     videoEffects: true,
+    chromaKey: true,
     text: true,
     audio: true,
   });
@@ -54,6 +57,7 @@ export const Inspector: React.FC = () => {
     updateClipAudio,
     updateClipText,
     updateClipCaption,
+    updateClipChromaKey,
     addKeyframeToClip,
     freezeFrameSelectedClip,
     detachAudioFromSelectedClip,
@@ -217,6 +221,115 @@ export const Inspector: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* CHROMA KEY (GREEN SCREEN REMOVAL) SECTION */}
+      {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+          <button
+            onClick={() => toggleSection('chromaKey')}
+            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+          >
+            <span className="flex items-center space-x-1.5">
+              <Scissors className="w-4 h-4 text-emerald-400" />
+              <span>Chroma Key (Green Screen)</span>
+            </span>
+            {openSections.chromaKey ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {openSections.chromaKey && (
+            <div className="p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-300">Enable Green Screen Key</span>
+                <button
+                  onClick={() =>
+                    updateClipChromaKey(selectedClip!.id, {
+                      enabled: !selectedClip!.chromaKey?.enabled,
+                      targetColor: selectedClip!.chromaKey?.targetColor || '#00ff00',
+                      colorDistance: selectedClip!.chromaKey?.colorDistance ?? 0.35,
+                      smoothness: selectedClip!.chromaKey?.smoothness ?? 0.15,
+                      spillReduction: selectedClip!.chromaKey?.spillReduction ?? 0.4,
+                    })
+                  }
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition ${
+                    selectedClip.chromaKey?.enabled
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-dark-800 text-gray-400 border border-dark-700'
+                  }`}
+                >
+                  {selectedClip.chromaKey?.enabled ? 'Keying ON' : 'Keying OFF'}
+                </button>
+              </div>
+
+              {selectedClip.chromaKey?.enabled && (
+                <>
+                  <div>
+                    <span className="text-[10px] font-semibold text-gray-400 block mb-1">Key Color</span>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        type="color"
+                        value={selectedClip.chromaKey.targetColor || '#00ff00'}
+                        onChange={(e) => updateClipChromaKey(selectedClip!.id, { targetColor: e.target.value })}
+                        className="w-8 h-8 rounded border border-dark-700 bg-dark-800 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={selectedClip.chromaKey.targetColor || '#00ff00'}
+                        onChange={(e) => updateClipChromaKey(selectedClip!.id, { targetColor: e.target.value })}
+                        className="flex-1 bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white uppercase font-mono text-center outline-none focus:border-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                      Tolerance / Distance ({Math.round((selectedClip.chromaKey.colorDistance ?? 0.35) * 100)}%)
+                    </span>
+                    <input
+                      type="range"
+                      min="0.05"
+                      max="0.80"
+                      step="0.02"
+                      value={selectedClip.chromaKey.colorDistance ?? 0.35}
+                      onChange={(e) => updateClipChromaKey(selectedClip!.id, { colorDistance: parseFloat(e.target.value) })}
+                      className="w-full accent-emerald-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                    />
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                      Softness Edge Feather ({Math.round((selectedClip.chromaKey.smoothness ?? 0.15) * 100)}%)
+                    </span>
+                    <input
+                      type="range"
+                      min="0.0"
+                      max="0.50"
+                      step="0.02"
+                      value={selectedClip.chromaKey.smoothness ?? 0.15}
+                      onChange={(e) => updateClipChromaKey(selectedClip!.id, { smoothness: parseFloat(e.target.value) })}
+                      className="w-full accent-emerald-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                    />
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                      Spill Cleanup ({Math.round((selectedClip.chromaKey.spillReduction ?? 0.4) * 100)}%)
+                    </span>
+                    <input
+                      type="range"
+                      min="0.0"
+                      max="1.0"
+                      step="0.05"
+                      value={selectedClip.chromaKey.spillReduction ?? 0.4}
+                      onChange={(e) => updateClipChromaKey(selectedClip!.id, { spillReduction: parseFloat(e.target.value) })}
+                      className="w-full accent-emerald-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CAPTION PRESETS & STYLING SECTION */}
       {selectedClip.type === 'caption' && (
@@ -429,82 +542,6 @@ export const Inspector: React.FC = () => {
           </div>
         )}
       </div>
-
-      {/* VIDEO EFFECTS SECTION */}
-      {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
-        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
-          <button
-            onClick={() => toggleSection('videoEffects')}
-            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
-          >
-            <span className="flex items-center space-x-1.5">
-              <Wand2 className="w-4 h-4 text-purple-400" />
-              <span>Video Effects</span>
-            </span>
-            {openSections.videoEffects ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
-
-          {openSections.videoEffects && (
-            <div className="p-3 space-y-3">
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Vignette ({selectedClip.filter.vignette || 0}%)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={selectedClip.filter.vignette || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { vignette: parseInt(e.target.value, 10) })}
-                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Glow ({selectedClip.filter.glow || 0}%)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={selectedClip.filter.glow || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { glow: parseInt(e.target.value, 10) })}
-                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Blur Effect ({selectedClip.filter.blur || 0}px)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="50"
-                  value={selectedClip.filter.blur || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { blur: parseInt(e.target.value, 10) })}
-                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-
-              <div>
-                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                  Color Shift ({selectedClip.filter.colorShift || 0}°)
-                </span>
-                <input
-                  type="range"
-                  min="0"
-                  max="360"
-                  value={selectedClip.filter.colorShift || 0}
-                  onChange={(e) => updateClipFilter(selectedClip!.id, { colorShift: parseInt(e.target.value, 10) })}
-                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* AUDIO SECTION */}
       {(selectedClip.type === 'video' || selectedClip.type === 'audio') && (
