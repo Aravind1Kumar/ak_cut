@@ -13,9 +13,13 @@ import {
   PanelRightOpen,
   Sparkles,
   Edit3,
+  Wand2,
+  FileText,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { AspectRatio } from '../types/timeline';
+import { GenerateCaptionsModal } from './GenerateCaptionsModal';
+import { TranscriptEditor } from './TranscriptEditor';
 
 interface HeaderProps {
   onOpenExportModal?: () => void;
@@ -35,6 +39,8 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
   const handleExport = onOpenExportModal || onOpenExport;
   const [projectName, setProjectName] = useState('Untitled Project');
   const [isEditingName, setIsEditingName] = useState(false);
+  const [isCaptionsModalOpen, setIsCaptionsModalOpen] = useState(false);
+  const [isTranscriptEditorOpen, setIsTranscriptEditorOpen] = useState(false);
 
   const {
     saveStatus,
@@ -119,6 +125,27 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
         </div>
       </div>
 
+      {/* Auto Captions & Transcript Editor Action Buttons */}
+      <div className="flex items-center space-x-2">
+        <button
+          onClick={() => setIsCaptionsModalOpen(true)}
+          className="flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white font-bold text-xs rounded-xl shadow transition"
+          title="Generate Automatic Captions (Speech-to-Text)"
+        >
+          <Wand2 className="w-3.5 h-3.5" />
+          <span>Auto Captions</span>
+        </button>
+
+        <button
+          onClick={() => setIsTranscriptEditorOpen(true)}
+          className="flex items-center space-x-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-gray-200 border border-dark-700 font-semibold text-xs rounded-xl transition"
+          title="Open Interactive Transcript Editor"
+        >
+          <FileText className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Transcript</span>
+        </button>
+      </div>
+
       {/* Undo / Redo & Social Canvas Aspect Ratio Selector */}
       <div className="flex items-center space-x-3">
         <div className="flex items-center space-x-1 bg-dark-800 p-1 rounded-xl border border-dark-700">
@@ -141,7 +168,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
           </button>
         </div>
 
-        {/* Social Canvas Aspect Ratio Presets Selector */}
         <div className="flex items-center space-x-1.5 bg-dark-800 px-2 py-1 rounded-xl border border-dark-700">
           <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
           <select
@@ -206,6 +232,18 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
           {isRightPanelOpen ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
         </button>
       </div>
+
+      {/* Auto Captions Generation Modal */}
+      <GenerateCaptionsModal
+        isOpen={isCaptionsModalOpen}
+        onClose={() => setIsCaptionsModalOpen(false)}
+      />
+
+      {/* Interactive Transcript Editor Modal */}
+      <TranscriptEditor
+        isOpen={isTranscriptEditorOpen}
+        onClose={() => setIsTranscriptEditorOpen(false)}
+      />
     </header>
   );
 };
