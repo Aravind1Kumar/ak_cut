@@ -5,6 +5,7 @@ import { Clip, Track } from '../types/timeline';
 import { getSourceTimeForTimelineTime } from './timelineMath';
 import { audioBufferToWav } from './audioWavEncoder';
 import { renderTransitionEffect } from './transitionEngine';
+import { renderCaption, DEFAULT_CAPTION_STYLES } from './captionEngine';
 
 export interface ExportSettings {
   resolution: '720p' | '1080p' | '4K';
@@ -317,6 +318,17 @@ export async function exportVideoProject(
 
         ctx.fillStyle = text.color;
         ctx.fillText(text.content, 0, 0);
+      } else if (clip.type === 'caption' && clip.caption) {
+        const style = DEFAULT_CAPTION_STYLES[clip.caption.stylePreset] || DEFAULT_CAPTION_STYLES.social;
+        const segment = clip.caption.segment || {
+          id: clip.id,
+          trackId: clip.trackId,
+          startTime: clip.startTime,
+          endTime: clip.startTime + clip.duration,
+          text: clip.caption.text,
+          words: clip.caption.words,
+        };
+        renderCaption(ctx, segment, time, style, width, height);
       }
 
       ctx.restore();
