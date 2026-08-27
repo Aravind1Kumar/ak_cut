@@ -17,6 +17,7 @@ import {
   FileText,
   Mic,
   Shapes,
+  LayoutTemplate,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { AspectRatio } from '../types/timeline';
@@ -24,6 +25,7 @@ import { GenerateCaptionsModal } from './GenerateCaptionsModal';
 import { TranscriptEditor } from './TranscriptEditor';
 import { VoiceoverModal } from './VoiceoverModal';
 import { StickersModal } from './StickersModal';
+import { PresetsModal } from './PresetsModal';
 
 interface HeaderProps {
   onOpenExportModal?: () => void;
@@ -47,6 +49,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
   const [isTranscriptEditorOpen, setIsTranscriptEditorOpen] = useState(false);
   const [isVoiceoverModalOpen, setIsVoiceoverModalOpen] = useState(false);
   const [isStickersModalOpen, setIsStickersModalOpen] = useState(false);
+  const [isPresetsModalOpen, setIsPresetsModalOpen] = useState(false);
 
   const {
     saveStatus,
@@ -126,7 +129,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
         </div>
       </div>
 
-      {/* Action Buttons: Auto Captions, Transcript, Voiceover & Stickers/Shapes */}
+      {/* Action Buttons: Auto Captions, Transcript, Voiceover, Stickers & Presets */}
       <div className="flex items-center space-x-2">
         <button
           onClick={() => setIsCaptionsModalOpen(true)}
@@ -144,6 +147,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
         >
           <FileText className="w-3.5 h-3.5 text-cyan-400" />
           <span>Transcript</span>
+        </button>
+
+        <button
+          onClick={() => setIsPresetsModalOpen(true)}
+          className="flex items-center space-x-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-purple-300 border border-purple-500/30 font-semibold text-xs rounded-xl transition"
+          title="Creator Style Presets & Reusable Templates"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+          <span>Presets</span>
         </button>
 
         <button
@@ -235,6 +247,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
       <StickersModal
         isOpen={isStickersModalOpen}
         onClose={() => setIsStickersModalOpen(false)}
+      />
+
+      <PresetsModal
+        isOpen={isPresetsModalOpen}
+        onClose={() => setIsPresetsModalOpen(false)}
       />
     </header>
   );
