@@ -11,6 +11,7 @@ import { applyCanvasMask } from './maskEngine';
 import { audioBufferToWav } from './audioWavEncoder';
 import { getSourceTimeForTimelineTime } from './timelineMath';
 import { getInterpolatedTransform, getInterpolatedFilter } from './keyframeEngine';
+import { renderTextClipOnCanvas } from './textRenderEngine';
 
 export interface ExportSettings {
   resolution: '720p' | '1080p';
@@ -234,31 +235,7 @@ export async function exportVideoProject(
         ctx.drawImage(vid, sx, sy, sw, sh, -drawW / 2, -drawH / 2, drawW, drawH);
       }
     } else if (clip.type === 'text' && clip.text) {
-      const text = clip.text;
-      ctx.font = `${text.bold ? 'bold ' : ''}${text.italic ? 'italic ' : ''}${text.fontSize * 2}px ${text.fontFamily}`;
-      ctx.textAlign = text.alignment;
-      ctx.textBaseline = 'middle';
-
-      if (text.backgroundColor !== 'transparent') {
-        const metrics = ctx.measureText(text.content);
-        const padding = 30;
-        ctx.fillStyle = text.backgroundColor;
-        ctx.fillRect(
-          -metrics.width / 2 - padding,
-          -text.fontSize - padding / 2,
-          metrics.width + padding * 2,
-          text.fontSize * 2 + padding
-        );
-      }
-
-      if (text.borderWidth > 0) {
-        ctx.strokeStyle = text.borderColor;
-        ctx.lineWidth = text.borderWidth * 2;
-        ctx.strokeText(text.content, 0, 0);
-      }
-
-      ctx.fillStyle = text.color;
-      ctx.fillText(text.content, 0, 0);
+      renderTextClipOnCanvas(ctx, clip, relTime, width, height);
     } else if (clip.type === 'caption' && clip.caption) {
       const style = DEFAULT_CAPTION_STYLES[clip.caption.stylePreset] || DEFAULT_CAPTION_STYLES.social;
       const segment = clip.caption.segment || {

@@ -92,7 +92,9 @@ interface TimelineState {
   tracks: Track[];
   selectedClipId: string | null;
   selectedClipIds: string[];
+  editingTextClipId: string | null;
   copiedClip: Clip | null;
+  copiedTextStyle: Partial<TextProps> | null;
 
   history: Track[][];
   historyIndex: number;
@@ -108,6 +110,7 @@ interface TimelineState {
   setZoomLevel: (zoom: number) => void;
   setAspectRatio: (ratio: AspectRatio) => void;
   setSelectedClipId: (id: string | null) => void;
+  setEditingTextClipId: (id: string | null) => void;
   toggleSelectClipId: (id: string) => void;
   setSelectedClipIds: (ids: string[]) => void;
   clearSelection: () => void;
@@ -154,6 +157,8 @@ interface TimelineState {
   detachAudioFromSelectedClip: () => void;
   copySelectedClip: () => void;
   pasteClipAtPlayhead: () => void;
+  copySelectedClipTextStyle: () => void;
+  pasteSelectedClipTextStyle: () => void;
 
   beginTransaction: () => void;
   commitTransaction: () => void;
@@ -190,7 +195,9 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   ],
   selectedClipId: null,
   selectedClipIds: [],
+  editingTextClipId: null,
   copiedClip: null,
+  copiedTextStyle: null,
 
   history: [],
   historyIndex: -1,
@@ -211,16 +218,30 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     get().saveProjectToDB();
   },
 
-  setSelectedClipId: (id) => set({ selectedClipId: id, selectedClipIds: id ? [id] : [] }),
+  setSelectedClipId: (id) =>
+    set((state) => ({
+      selectedClipId: id,
+      selectedClipIds: id ? [id] : [],
+      editingTextClipId: state.editingTextClipId === id ? id : null,
+    })),
+
+  setEditingTextClipId: (id) => set({ editingTextClipId: id }),
+
   toggleSelectClipId: (id) =>
     set((state) => {
       const exists = state.selectedClipIds.includes(id);
       const updated = exists ? state.selectedClipIds.filter((i) => i !== id) : [...state.selectedClipIds, id];
-      return { selectedClipIds: updated, selectedClipId: updated.length > 0 ? updated[updated.length - 1] : null };
+      return {
+        selectedClipIds: updated,
+        selectedClipId: updated.length > 0 ? updated[updated.length - 1] : null,
+        editingTextClipId: null,
+      };
     }),
 
-  setSelectedClipIds: (ids) => set({ selectedClipIds: ids, selectedClipId: ids.length > 0 ? ids[0] : null }),
-  clearSelection: () => set({ selectedClipId: null, selectedClipIds: [] }),
+  setSelectedClipIds: (ids) =>
+    set({ selectedClipIds: ids, selectedClipId: ids.length > 0 ? ids[0] : null, editingTextClipId: null }),
+
+  clearSelection: () => set({ selectedClipId: null, selectedClipIds: [], editingTextClipId: null }),
   setSnappingEnabled: (enabled) => set({ snappingEnabled: enabled }),
   setRippleDeleteEnabled: (enabled) => set({ rippleDeleteEnabled: enabled }),
 
@@ -264,7 +285,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         id,
         name: assetData.name,
         mimeType: fileBlob.type,
-        type: assetData.type === 'caption' ? 'video' : (assetData.type as any),
+        type: (assetData.type as string) === 'caption' ? 'video' : (assetData.type as any),
         blob: fileBlob,
         size: fileBlob.size,
         duration: assetData.duration,
@@ -386,13 +407,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, clips: [...t.clips, newClip] } : t)),
       selectedClipId: id,
       selectedClipIds: [id],
+      editingTextClipId: clipData.type === 'text' ? id : null,
     }));
 
     get().saveProjectToDB();
     return id;
   },
 
-  addTextClipDirectlyOnCanvas: (initialContent = 'Type here') => {
+  addTextClipDirectlyOnCanvas: (initialContent = 'Type Text Here') => {
     let textTrack = get().tracks.find((t) => t.type === 'text');
     let textTrackId = textTrack?.id || get().addTrack('text', 'Text Track 1');
 
@@ -404,7 +426,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       text: {
         content: initialContent,
         fontFamily: 'Inter, sans-serif',
-        fontSize: 44,
+        fontSize: 48,
         color: '#ffffff',
         backgroundColor: 'rgba(0,0,0,0.6)',
         borderColor: '#00f2fe',
@@ -412,10 +434,14 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         alignment: 'center',
         bold: true,
         italic: false,
+        backgroundEnabled: true,
+        backgroundOpacity: 0.6,
+        backgroundPadding: 16,
+        borderRadius: 8,
       },
     });
 
-    set({ selectedClipId: clipId, selectedClipIds: [clipId] });
+    set({ selectedClipId: clipId, selectedClipIds: [clipId], editingTextClipId: clipId });
     return clipId;
   },
 
@@ -426,8 +452,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         clips: track.clips.map((clip) => {
           if (clip.id === clipId) {
             const updated = { ...clip, ...updates };
-            if (updates.text?.content) {
-              updated.name = updates.text.content.slice(0, 20);
+            if (updates.text?.content !== undefined) {
+              updated.name = updates.text.content ? updates.text.content.slice(0, 20) : 'Text Clip';
             }
             return updated;
           }
@@ -451,7 +477,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   },
 
   updateClipFilter: (clipId, filter) => {
-    get().pushHistory();
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
@@ -480,11 +505,23 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) => {
-          if (clip.id === clipId && clip.text) {
-            const updatedText = { ...clip.text, ...text };
+          if (clip.id === clipId) {
+            const currentText: TextProps = clip.text || {
+              content: '',
+              fontFamily: 'Inter, sans-serif',
+              fontSize: 48,
+              color: '#ffffff',
+              backgroundColor: 'transparent',
+              borderColor: '#000000',
+              borderWidth: 0,
+              alignment: 'center',
+              bold: false,
+              italic: false,
+            };
+            const updatedText: TextProps = { ...currentText, ...text };
             return {
               ...clip,
-              name: updatedText.content.slice(0, 20),
+              name: updatedText.content ? updatedText.content.slice(0, 20) : 'Text Clip',
               text: updatedText,
             };
           }
@@ -529,9 +566,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
         clips: track.clips.map((clip) =>
-          clip.id === clipId
-            ? { ...clip, chromaKey: { ...(clip.chromaKey || DEFAULT_CHROMA_KEY), ...chromaKey } }
-            : clip
+          clip.id === clipId ? { ...clip, chromaKey: { ...(clip.chromaKey || DEFAULT_CHROMA_KEY), ...chromaKey } } : clip
         ),
       })),
     }));
@@ -553,17 +588,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   updateClipSpeedCurve: (clipId, curve) => {
     get().pushHistory();
-    let speedMult = 1;
-    if (curve === 'hero') speedMult = 1.5;
-    else if (curve === 'montage') speedMult = 2;
-    else if (curve === 'bulletTime') speedMult = 0.5;
-
     set((state) => ({
       tracks: state.tracks.map((track) => ({
         ...track,
-        clips: track.clips.map((clip) =>
-          clip.id === clipId ? { ...clip, speedCurve: curve, speed: speedMult } : clip
-        ),
+        clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, speedCurve: curve } : clip)),
       })),
     }));
     get().saveProjectToDB();
@@ -571,284 +599,265 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   addKeyframeToClip: (clipId) => {
     get().pushHistory();
-    const { currentTime } = get();
-
-    set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.map((clip) => {
-          if (clip.id === clipId) {
-            const relTime = Math.max(0, currentTime - clip.startTime);
-            const kfId = `kf-${Date.now()}`;
-            const newKf: Keyframe = {
-              id: kfId,
-              time: relTime,
-              transform: { ...clip.transform },
-              easing: 'linear',
-            };
-            return { ...clip, keyframes: [...clip.keyframes, newKf] };
-          }
-          return clip;
-        }),
-      })),
-    }));
-    get().saveProjectToDB();
-  },
-
-  removeKeyframeFromClip: (clipId, keyframeId) => {
-    get().pushHistory();
-    set((state) => ({
-      tracks: state.tracks.map((track) => ({
-        ...track,
-        clips: track.clips.map((clip) =>
-          clip.id === clipId
-            ? { ...clip, keyframes: clip.keyframes.filter((k) => k.id !== keyframeId) }
-            : clip
-        ),
-      })),
-    }));
-    get().saveProjectToDB();
-  },
-
-  groupSelectedClips: () => {
-    const { selectedClipIds, tracks } = get();
-    if (selectedClipIds.length < 2) return;
-    get().pushHistory();
-    const groupId = `group-${Date.now()}`;
-    set((state) => ({
-      tracks: state.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => (selectedClipIds.includes(c.id) ? { ...c, groupId } : c)),
-      })),
-    }));
-    get().saveProjectToDB();
-  },
-
-  ungroupSelectedClips: () => {
-    const { selectedClipIds, tracks } = get();
-    if (selectedClipIds.length === 0) return;
-    get().pushHistory();
-    set((state) => ({
-      tracks: state.tracks.map((t) => ({
-        ...t,
-        clips: t.clips.map((c) => (selectedClipIds.includes(c.id) ? { ...c, groupId: undefined } : c)),
-      })),
-    }));
-    get().saveProjectToDB();
-  },
-
-  splitSelectedClip: () => {
-    const { selectedClipId, currentTime, tracks } = get();
-    if (!selectedClipId) return;
-
+    const { currentTime, tracks } = get();
     for (const track of tracks) {
-      const clip = track.clips.find((c) => c.id === selectedClipId);
-      if (clip && currentTime > clip.startTime && currentTime < clip.startTime + clip.duration) {
-        get().pushHistory();
-
-        const firstSegmentDuration = currentTime - clip.startTime;
-        const secondSegmentDuration = clip.duration - firstSegmentDuration;
-
-        const updatedClips = track.clips.map((c) => {
-          if (c.id === clip.id) {
-            return { ...c, duration: firstSegmentDuration };
-          }
-          return c;
-        });
-
-        const newSecondClipId = get().addClipToTrack(track.id, {
-          ...clip,
-          id: undefined,
-          startTime: currentTime,
-          duration: secondSegmentDuration,
-          mediaOffset: clip.mediaOffset + firstSegmentDuration * clip.speed,
-        });
-
+      const clip = track.clips.find((c) => c.id === clipId);
+      if (clip) {
+        const relTime = Math.max(0, Math.min(clip.duration, currentTime - clip.startTime));
+        const newKf: Keyframe = {
+          id: `kf-${Date.now()}`,
+          time: relTime,
+          transform: { ...clip.transform },
+          filter: { ...clip.filter },
+          audio: { ...clip.audio },
+          text: clip.text ? { ...clip.text } : undefined,
+          easing: 'linear',
+        };
+        const updatedKfs = [...clip.keyframes.filter((k) => Math.abs(k.time - relTime) > 0.05), newKf].sort(
+          (a, b) => a.time - b.time
+        );
+        get().updateClip(clipId, { keyframes: updatedKfs });
         break;
       }
     }
   },
 
-  freezeFrameSelectedClip: (dataUrl) => {
+  removeKeyframeFromClip: (clipId, keyframeId) => {
+    get().pushHistory();
+    const { tracks } = get();
+    for (const track of tracks) {
+      const clip = track.clips.find((c) => c.id === clipId);
+      if (clip) {
+        const updatedKfs = clip.keyframes.filter((k) => k.id !== keyframeId);
+        get().updateClip(clipId, { keyframes: updatedKfs });
+        break;
+      }
+    }
+  },
+
+  groupSelectedClips: () => {
+    const { selectedClipIds, tracks, pushHistory, saveProjectToDB } = get();
+    if (selectedClipIds.length < 2) return;
+    pushHistory();
+    const groupId = `group-${Date.now()}`;
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => (selectedClipIds.includes(clip.id) ? { ...clip, groupId } : clip)),
+      })),
+    }));
+    saveProjectToDB();
+  },
+
+  ungroupSelectedClips: () => {
+    const { selectedClipIds, tracks, pushHistory, saveProjectToDB } = get();
+    if (selectedClipIds.length === 0) return;
+    pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) => (selectedClipIds.includes(clip.id) ? { ...clip, groupId: undefined } : clip)),
+      })),
+    }));
+    saveProjectToDB();
+  },
+
+  splitSelectedClip: () => {
+    get().pushHistory();
     const { selectedClipId, currentTime, tracks } = get();
     if (!selectedClipId) return;
 
+    let targetTrack: Track | null = null;
+    let targetClip: Clip | null = null;
+
     for (const track of tracks) {
-      const clip = track.clips.find((c) => c.id === selectedClipId);
-      if (clip && clip.type === 'video' && currentTime > clip.startTime && currentTime < clip.startTime + clip.duration) {
-        get().pushHistory();
+      const found = track.clips.find((c) => c.id === selectedClipId);
+      if (found) {
+        targetTrack = track;
+        targetClip = found;
+        break;
+      }
+    }
 
-        const firstSegmentDuration = currentTime - clip.startTime;
-        const freezeDuration = 3.0;
-        const secondSegmentDuration = clip.duration - firstSegmentDuration;
-        const secondMediaOffset = clip.mediaOffset + firstSegmentDuration * clip.speed;
+    if (!targetTrack || !targetClip) return;
+    if (currentTime <= targetClip.startTime || currentTime >= targetClip.startTime + targetClip.duration) return;
 
-        const updatedClips = track.clips.map((c) => {
-          if (c.id === clip.id) {
-            return { ...c, duration: firstSegmentDuration };
-          }
-          return c;
-        });
+    const splitOffset = currentTime - targetClip.startTime;
 
-        const freezeClipId = `clip-freeze-${Date.now()}`;
-        const freezeClip: Clip = {
-          id: freezeClipId,
-          trackId: track.id,
-          name: `Freeze: ${clip.name}`,
-          type: 'image',
-          startTime: currentTime,
-          duration: freezeDuration,
-          mediaOffset: 0,
-          sourceDuration: freezeDuration,
-          src: dataUrl,
-          speed: 1,
-          transform: { ...clip.transform },
-          filter: { ...clip.filter },
-          audio: { volume: 0, fadeIn: 0, fadeOut: 0, muted: true },
-          transition: { type: 'none', duration: 0.5 },
-          keyframes: [],
+    const firstClip: Clip = {
+      ...targetClip,
+      duration: splitOffset,
+    };
+
+    const secondClip: Clip = {
+      ...targetClip,
+      id: `clip-${Date.now()}`,
+      startTime: currentTime,
+      duration: targetClip.duration - splitOffset,
+      mediaOffset: targetClip.mediaOffset + splitOffset,
+    };
+
+    set((state) => ({
+      tracks: state.tracks.map((t) =>
+        t.id === targetTrack!.id
+          ? {
+              ...t,
+              clips: t.clips.flatMap((c) => (c.id === targetClip!.id ? [firstClip, secondClip] : [c])),
+            }
+          : t
+      ),
+      selectedClipId: secondClip.id,
+      selectedClipIds: [secondClip.id],
+    }));
+
+    get().saveProjectToDB();
+  },
+
+  freezeFrameSelectedClip: (dataUrl) => {
+    get().pushHistory();
+    const { selectedClipId, currentTime, tracks, addTrack, addClipToTrack } = get();
+    if (!selectedClipId) return;
+
+    let targetClip: Clip | null = null;
+    for (const track of tracks) {
+      const found = track.clips.find((c) => c.id === selectedClipId);
+      if (found) {
+        targetClip = found;
+        break;
+      }
+    }
+    if (!targetClip) return;
+
+    let imageTrack = tracks.find((t) => t.type === 'image');
+    let targetTrackId = imageTrack?.id || addTrack('image', 'Freeze Frame Track');
+
+    addClipToTrack(targetTrackId, {
+      name: `Freeze: ${targetClip.name}`,
+      type: 'image',
+      src: dataUrl,
+      startTime: currentTime,
+      duration: 3,
+    });
+  },
+
+  duplicateSelectedClip: () => {
+    get().pushHistory();
+    const { selectedClipId, tracks } = get();
+    if (!selectedClipId) return;
+
+    for (const track of tracks) {
+      const found = track.clips.find((c) => c.id === selectedClipId);
+      if (found) {
+        const newClip: Clip = {
+          ...found,
+          id: `clip-${Date.now()}`,
+          startTime: found.startTime + found.duration + 0.5,
         };
-
-        const secondClipId = `clip-${Date.now()}-2`;
-        const secondClip: Clip = {
-          ...clip,
-          id: secondClipId,
-          startTime: currentTime + freezeDuration,
-          duration: secondSegmentDuration,
-          mediaOffset: secondMediaOffset,
-        };
-
         set((state) => ({
-          tracks: state.tracks.map((t) =>
-            t.id === track.id
-              ? { ...t, clips: [...updatedClips.filter((c) => c.id !== secondClipId), freezeClip, secondClip] }
-              : t
-          ),
-          selectedClipId: freezeClipId,
-          selectedClipIds: [freezeClipId],
+          tracks: state.tracks.map((t) => (t.id === track.id ? { ...t, clips: [...t.clips, newClip] } : t)),
+          selectedClipId: newClip.id,
+          selectedClipIds: [newClip.id],
         }));
-
         get().saveProjectToDB();
         break;
       }
     }
   },
 
-  duplicateSelectedClip: () => {
-    const { selectedClipIds, tracks } = get();
-    if (selectedClipIds.length === 0) return;
-
-    get().pushHistory();
-    selectedClipIds.forEach((clipId) => {
-      for (const track of tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) {
-          get().addClipToTrack(track.id, {
-            ...clip,
-            id: undefined,
-            startTime: clip.startTime + clip.duration + 0.2,
-          });
-          break;
-        }
-      }
-    });
-  },
-
   deleteSelectedClip: () => {
-    const { selectedClipIds, rippleDeleteEnabled, tracks } = get();
-    if (selectedClipIds.length === 0) return;
-
     get().pushHistory();
+    const { selectedClipIds, selectedClipId } = get();
+    const idsToDelete = selectedClipIds.length > 0 ? selectedClipIds : selectedClipId ? [selectedClipId] : [];
+    if (idsToDelete.length === 0) return;
 
     set((state) => ({
-      tracks: state.tracks.map((track) => {
-        const deletedOnTrack = track.clips.filter((c) => selectedClipIds.includes(c.id));
-        const remainingClips = track.clips.filter((c) => !selectedClipIds.includes(c.id));
-
-        if (!rippleDeleteEnabled || deletedOnTrack.length === 0) {
-          return { ...track, clips: remainingClips };
-        }
-
-        const sortedDeleted = [...deletedOnTrack].sort((a, b) => a.startTime - b.startTime);
-        const rippledClips = remainingClips.map((clip) => {
-          const deletedBefore = sortedDeleted.filter((dc) => dc.startTime < clip.startTime);
-          const totalDeletedDuration = deletedBefore.reduce((acc, dc) => acc + dc.duration, 0);
-          return {
-            ...clip,
-            startTime: Math.max(0, clip.startTime - totalDeletedDuration),
-          };
-        });
-
-        return { ...track, clips: rippledClips };
-      }),
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.filter((c) => !idsToDelete.includes(c.id)),
+      })),
       selectedClipId: null,
       selectedClipIds: [],
+      editingTextClipId: null,
     }));
 
     get().saveProjectToDB();
   },
 
   detachAudioFromSelectedClip: () => {
-    const { selectedClipId, tracks } = get();
+    get().pushHistory();
+    const { selectedClipId, tracks, addTrack, addClipToTrack } = get();
     if (!selectedClipId) return;
 
+    let targetClip: Clip | null = null;
+    for (const track of tracks) {
+      const found = track.clips.find((c) => c.id === selectedClipId);
+      if (found && found.type === 'video' && found.src) {
+        targetClip = found;
+        break;
+      }
+    }
+
+    if (!targetClip) return;
+
+    let audioTrack = tracks.find((t) => t.type === 'audio');
+    let targetTrackId = audioTrack?.id || addTrack('audio', 'Extracted Audio Track');
+
+    addClipToTrack(targetTrackId, {
+      name: `Audio from ${targetClip.name}`,
+      type: 'audio',
+      assetId: targetClip.assetId,
+      src: targetClip.src,
+      startTime: targetClip.startTime,
+      duration: targetClip.duration,
+      mediaOffset: targetClip.mediaOffset,
+      sourceDuration: targetClip.sourceDuration,
+      speed: targetClip.speed,
+    });
+
+    get().updateClipAudio(targetClip.id, { muted: true });
+  },
+
+  copySelectedClip: () => {
+    const { tracks, selectedClipId } = get();
+    if (!selectedClipId) return;
     for (const track of tracks) {
       const clip = track.clips.find((c) => c.id === selectedClipId);
-      if (clip && clip.type === 'video') {
-        get().pushHistory();
-        get().updateClipAudio(clip.id, { muted: true });
-
-        let audioTrack = tracks.find((t) => t.type === 'audio');
-        let audioTrackId = audioTrack?.id || get().addTrack('audio', 'Extracted Audio');
-
-        get().addClipToTrack(audioTrackId, {
-          name: `${clip.name} (Audio)`,
-          type: 'audio',
-          assetId: clip.assetId,
-          src: clip.src,
-          startTime: clip.startTime,
-          duration: clip.duration,
-          mediaOffset: clip.mediaOffset,
-          sourceDuration: clip.sourceDuration,
-        });
-
+      if (clip) {
+        set({ copiedClip: clip });
         break;
       }
     }
   },
 
-  copySelectedClip: () => {
-    const { selectedClipIds, tracks } = get();
-    if (selectedClipIds.length === 0) return;
+  pasteClipAtPlayhead: () => {
+    const { copiedClip, currentTime, tracks, addClipToTrack } = get();
+    if (!copiedClip) return;
 
-    const clipsToCopy: Clip[] = [];
-    selectedClipIds.forEach((id) => {
-      for (const track of tracks) {
-        const clip = track.clips.find((c) => c.id === id);
-        if (clip) {
-          clipsToCopy.push(clip);
-          break;
-        }
-      }
+    let targetTrack = tracks.find((t) => t.id === copiedClip.trackId) || tracks[0];
+    addClipToTrack(targetTrack.id, {
+      ...copiedClip,
+      startTime: currentTime,
     });
+  },
 
-    if (clipsToCopy.length > 0) {
-      set({ copiedClip: clipsToCopy[0] });
+  copySelectedClipTextStyle: () => {
+    const { tracks, selectedClipId } = get();
+    if (!selectedClipId) return;
+    for (const track of tracks) {
+      const clip = track.clips.find((c) => c.id === selectedClipId);
+      if (clip && clip.text) {
+        const { content, ...styleProps } = clip.text;
+        set({ copiedTextStyle: styleProps });
+        break;
+      }
     }
   },
 
-  pasteClipAtPlayhead: () => {
-    const { copiedClip, currentTime, tracks } = get();
-    if (!copiedClip) return;
-
-    let targetTrack = tracks.find((t) => t.type === copiedClip.type);
-    let targetTrackId = targetTrack?.id || get().addTrack(copiedClip.type);
-
-    get().addClipToTrack(targetTrackId, {
-      ...copiedClip,
-      id: undefined,
-      startTime: currentTime,
-    });
+  pasteSelectedClipTextStyle: () => {
+    const { selectedClipId, copiedTextStyle, updateClipText, pushHistory } = get();
+    if (!selectedClipId || !copiedTextStyle) return;
+    pushHistory();
+    updateClipText(selectedClipId, copiedTextStyle);
   },
 
   beginTransaction: () => {
@@ -862,9 +871,8 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   pushHistory: () => {
     const { tracks, history, historyIndex } = get();
     const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(JSON.parse(JSON.stringify(tracks)));
-    if (newHistory.length > 50) newHistory.shift();
-
+    const snapshot = JSON.parse(JSON.stringify(tracks));
+    newHistory.push(snapshot);
     set({
       history: newHistory,
       historyIndex: newHistory.length - 1,
@@ -875,10 +883,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   undo: () => {
     const { history, historyIndex } = get();
     if (historyIndex > 0) {
-      const prevTracks = history[historyIndex - 1];
+      const newIndex = historyIndex - 1;
+      const snapshot = JSON.parse(JSON.stringify(history[newIndex]));
       set({
-        tracks: JSON.parse(JSON.stringify(prevTracks)),
-        historyIndex: historyIndex - 1,
+        tracks: snapshot,
+        historyIndex: newIndex,
         saveStatus: 'Unsaved changes',
       });
       get().saveProjectToDB();
@@ -888,10 +897,11 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   redo: () => {
     const { history, historyIndex } = get();
     if (historyIndex < history.length - 1) {
-      const nextTracks = history[historyIndex + 1];
+      const newIndex = historyIndex + 1;
+      const snapshot = JSON.parse(JSON.stringify(history[newIndex]));
       set({
-        tracks: JSON.parse(JSON.stringify(nextTracks)),
-        historyIndex: historyIndex + 1,
+        tracks: snapshot,
+        historyIndex: newIndex,
         saveStatus: 'Unsaved changes',
       });
       get().saveProjectToDB();

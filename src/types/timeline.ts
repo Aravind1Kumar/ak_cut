@@ -58,6 +58,20 @@ export interface AudioProps {
   ducking?: DuckingProps;
 }
 
+export type TextAnimationType =
+  | 'none'
+  | 'fadeIn'
+  | 'fadeOut'
+  | 'pop'
+  | 'scaleIn'
+  | 'scaleOut'
+  | 'slideLeft'
+  | 'slideRight'
+  | 'slideUp'
+  | 'slideDown'
+  | 'typewriter'
+  | 'bounce';
+
 export interface TextProps {
   content: string;
   fontFamily: string;
@@ -67,9 +81,29 @@ export interface TextProps {
   borderColor: string;
   borderWidth: number;
   alignment: 'left' | 'center' | 'right';
+  verticalAlignment?: 'top' | 'center' | 'bottom';
   bold: boolean;
   italic: boolean;
-  animation?: 'none' | 'fadeIn' | 'typewriter' | 'bounce';
+  underline?: boolean;
+  letterSpacing?: number;    // -20 to +50 px
+  lineHeight?: number;       // 0.5 to 3.0
+  backgroundEnabled?: boolean;
+  backgroundOpacity?: number; // 0.0 - 1.0
+  backgroundPadding?: number; // px
+  borderRadius?: number;      // px
+  outlineEnabled?: boolean;
+  outlineColor?: string;
+  outlineWidth?: number;      // 0 - 20 px
+  shadowEnabled?: boolean;
+  shadowColor?: string;
+  shadowOpacity?: number;     // 0.0 - 1.0
+  shadowBlur?: number;        // 0 - 50 px
+  shadowOffsetX?: number;     // -50 to +50 px
+  shadowOffsetY?: number;     // -50 to +50 px
+  boxWidthMode?: 'auto' | 'fixed';
+  boxWidth?: number;          // px
+  animation?: TextAnimationType;
+  presetKey?: string;
 }
 
 export type ShapeType = 'rectangle' | 'roundedRectangle' | 'circle' | 'ellipse' | 'line' | 'triangle' | 'arrow' | 'star';
@@ -87,6 +121,24 @@ export interface StickerProps {
   icon: string; // symbol or emoji string
   color?: string;
   animation?: 'none' | 'fadeIn' | 'pop' | 'bounce';
+}
+
+export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | '21:9';
+
+export type MediaAssetType = 'video' | 'audio' | 'image';
+
+export interface MediaAsset {
+  id: string;
+  name: string;
+  type: MediaAssetType;
+  src: string;
+  duration: number; // in seconds
+  size: number;     // bytes
+  width?: number;
+  height?: number;
+  inPoint?: number;
+  outPoint?: number;
+  createdAt: number;
 }
 
 export type TransitionType =
@@ -115,13 +167,14 @@ export interface Keyframe {
   transform: Partial<TransformProps>;
   filter?: Partial<FilterProps>;
   audio?: Partial<AudioProps>;
+  text?: Partial<TextProps>;
   easing?: KeyframeEasing;
 }
 
 export interface ChromaKeyProps {
   enabled: boolean;
   targetColor: string; // hex e.g. '#00ff00'
-  color?: string;      // alias
+  color?: string;      // color alias
   colorDistance: number; // 0.0 - 1.0 (similarity tolerance)
   smoothness: number;    // 0.0 - 1.0 (feather edge softness)
   spillReduction?: number; // 0.0 - 1.0 (green/blue spill cleanup)
@@ -248,30 +301,4 @@ export interface Track {
   clips: Clip[];
 }
 
-export interface MediaAsset {
-  id: string;
-  name: string;
-  type: MediaType;
-  src: string;
-  duration: number;
-  size: number;
-  createdAt: number;
-  width?: number;
-  height?: number;
-  inPoint?: number;
-  outPoint?: number;
-  assetId?: string;
-}
-
-export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:5' | '4:3' | '21:9';
-
-export interface ProjectState {
-  id: string;
-  name: string;
-  updatedAt: number;
-  aspectRatio: AspectRatio;
-  duration: number;
-  tracks: Track[];
-  mediaAssets: MediaAsset[];
-  markers: TimelineMarker[];
-}
+export type LayoutMode = 'auto' | 'mobile' | 'desktop';

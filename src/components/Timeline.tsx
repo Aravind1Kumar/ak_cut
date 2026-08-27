@@ -91,9 +91,16 @@ export const Timeline: React.FC = () => {
       if (e.key === 'Shift') setIsShiftPressed(true);
 
       const activeTag = document.activeElement?.tagName.toLowerCase();
-      if (activeTag === 'input' || activeTag === 'textarea') return;
+      const isContentEditable = (document.activeElement as HTMLElement)?.isContentEditable;
+      const { editingTextClipId } = useTimelineStore.getState();
 
-      if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
+      if (editingTextClipId || activeTag === 'input' || activeTag === 'textarea' || isContentEditable) return;
+
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault();
+        const { isPlaying, setIsPlaying } = useTimelineStore.getState();
+        setIsPlaying(!isPlaying);
+      } else if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         splitSelectedClip();
       } else if (e.key.toLowerCase() === 'b' && !e.ctrlKey && !e.metaKey) {
