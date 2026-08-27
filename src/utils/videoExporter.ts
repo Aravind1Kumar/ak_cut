@@ -5,6 +5,7 @@ import { Clip } from '../types/timeline';
 import { renderTransitionEffect, findPreviousClipOnSameTrack } from './transitionEngine';
 import { renderCaption, DEFAULT_CAPTION_STYLES } from './captionEngine';
 import { buildCSSFilterString, renderPostProcessingEffects } from './filterEngine';
+import { renderShape, renderSticker } from './graphicsEngine';
 import { audioBufferToWav } from './audioWavEncoder';
 import { getSourceTimeForTimelineTime } from './timelineMath';
 
@@ -341,6 +342,10 @@ export async function exportVideoProject(
           words: clip.caption.words,
         };
         renderCaption(ctx, segment, time, style, width, height);
+      } else if (clip.type === 'shape' && clip.shape) {
+        renderShape(ctx, clip.shape, width, height);
+      } else if (clip.type === 'sticker' && clip.sticker) {
+        renderSticker(ctx, clip.sticker, width, height);
       }
 
       renderPostProcessingEffects(ctx, clip.filter, width, height);

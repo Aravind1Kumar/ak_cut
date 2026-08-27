@@ -18,6 +18,7 @@ import { Clip, Keyframe } from '../types/timeline';
 import { renderTransitionEffect, findPreviousClipOnSameTrack } from '../utils/transitionEngine';
 import { renderCaption, DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
 import { buildCSSFilterString, renderPostProcessingEffects } from '../utils/filterEngine';
+import { renderShape, renderSticker } from '../utils/graphicsEngine';
 import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
 
 export const PreviewPlayer: React.FC = () => {
@@ -341,6 +342,10 @@ export const PreviewPlayer: React.FC = () => {
         };
 
         renderCaption(ctx, segment, currentTime, style, width, height);
+      } else if (clip.type === 'shape' && clip.shape) {
+        renderShape(ctx, clip.shape, width, height);
+      } else if (clip.type === 'sticker' && clip.sticker) {
+        renderSticker(ctx, clip.sticker, width, height);
       }
 
       renderPostProcessingEffects(ctx, clip.filter, width, height);

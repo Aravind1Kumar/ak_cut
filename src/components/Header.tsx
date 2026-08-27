@@ -16,12 +16,14 @@ import {
   Wand2,
   FileText,
   Mic,
+  Shapes,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { AspectRatio } from '../types/timeline';
 import { GenerateCaptionsModal } from './GenerateCaptionsModal';
 import { TranscriptEditor } from './TranscriptEditor';
 import { VoiceoverModal } from './VoiceoverModal';
+import { StickersModal } from './StickersModal';
 
 interface HeaderProps {
   onOpenExportModal?: () => void;
@@ -44,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
   const [isCaptionsModalOpen, setIsCaptionsModalOpen] = useState(false);
   const [isTranscriptEditorOpen, setIsTranscriptEditorOpen] = useState(false);
   const [isVoiceoverModalOpen, setIsVoiceoverModalOpen] = useState(false);
+  const [isStickersModalOpen, setIsStickersModalOpen] = useState(false);
 
   const {
     saveStatus,
@@ -123,7 +126,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
         </div>
       </div>
 
-      {/* Action Buttons: Auto Captions, Transcript & Voiceover Microphone Recorder */}
+      {/* Action Buttons: Auto Captions, Transcript, Voiceover & Stickers/Shapes */}
       <div className="flex items-center space-x-2">
         <button
           onClick={() => setIsCaptionsModalOpen(true)}
@@ -141,6 +144,15 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
         >
           <FileText className="w-3.5 h-3.5 text-cyan-400" />
           <span>Transcript</span>
+        </button>
+
+        <button
+          onClick={() => setIsStickersModalOpen(true)}
+          className="flex items-center space-x-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-cyan-300 border border-cyan-500/30 font-semibold text-xs rounded-xl transition"
+          title="Add Stickers, Vector Shapes & Emojis"
+        >
+          <Shapes className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Stickers</span>
         </button>
 
         <button
@@ -218,6 +230,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenExportModal, onOpenExport 
       <VoiceoverModal
         isOpen={isVoiceoverModalOpen}
         onClose={() => setIsVoiceoverModalOpen(false)}
+      />
+
+      <StickersModal
+        isOpen={isStickersModalOpen}
+        onClose={() => setIsStickersModalOpen(false)}
       />
     </header>
   );

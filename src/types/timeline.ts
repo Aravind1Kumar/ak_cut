@@ -1,4 +1,4 @@
-export type MediaType = 'video' | 'audio' | 'text' | 'image' | 'caption';
+export type MediaType = 'video' | 'audio' | 'text' | 'image' | 'caption' | 'shape' | 'sticker';
 
 export type SpeedCurveType = 'flat' | 'hero' | 'montage' | 'bulletTime' | 'flashOut';
 
@@ -70,6 +70,23 @@ export interface TextProps {
   bold: boolean;
   italic: boolean;
   animation?: 'none' | 'fadeIn' | 'typewriter' | 'bounce';
+}
+
+export type ShapeType = 'rectangle' | 'roundedRectangle' | 'circle' | 'ellipse' | 'line' | 'triangle' | 'arrow' | 'star';
+
+export interface ShapeProps {
+  type: ShapeType;
+  fillColor: string;
+  fillOpacity: number;
+  borderColor: string;
+  borderWidth: number;
+  animation?: 'none' | 'fadeIn' | 'scaleIn' | 'slideLeft' | 'slideRight';
+}
+
+export interface StickerProps {
+  icon: string; // symbol or emoji string
+  color?: string;
+  animation?: 'none' | 'fadeIn' | 'pop' | 'bounce';
 }
 
 export type TransitionType =
@@ -206,6 +223,8 @@ export interface Clip {
   audio: AudioProps;
   text?: TextProps;
   caption?: CaptionProps;
+  shape?: ShapeProps;
+  sticker?: StickerProps;
   transition?: TransitionProps;
   chromaKey?: ChromaKeyProps;
   mask?: MaskProps;
