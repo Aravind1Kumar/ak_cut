@@ -1,29 +1,24 @@
 import { create } from 'zustand';
 import {
-  Track,
   Clip,
-  MediaType,
-  AspectRatio,
+  Track,
   TransformProps,
   FilterProps,
   AudioProps,
   TextProps,
   CaptionProps,
-  MediaAsset,
   TransitionProps,
   ChromaKeyProps,
   MaskProps,
-  SpeedCurveType,
   Keyframe,
   TimelineMarker,
+  MediaAsset,
+  AspectRatio,
+  ProjectState,
+  MediaType,
+  SpeedCurveType,
 } from '../types/timeline';
-import {
-  saveProjectStateToIndexedDB,
-  loadProjectStateFromIndexedDB,
-  saveMediaAssetBlob,
-  deleteMediaAssetBlob,
-  restoreProjectWithMediaBlobs,
-} from '../utils/projectPersistence';
+import { saveProject, loadProject, restoreProjectWithMediaBlobs } from '../utils/projectPersistence';
 
 const DEFAULT_TRANSFORM: TransformProps = {
   x: 0,
@@ -51,13 +46,18 @@ const DEFAULT_AUDIO: AudioProps = {
 
 const DEFAULT_CHROMA_KEY: ChromaKeyProps = {
   enabled: false,
-  color: '#00ff00',
-  threshold: 40,
-  smoothness: 10,
+  targetColor: '#00ff00',
+  colorDistance: 0.4,
+  smoothness: 0.1,
 };
 
 const DEFAULT_MASK: MaskProps = {
   type: 'none',
+  x: 0,
+  y: 0,
+  width: 100,
+  height: 100,
+  rotation: 0,
   feather: 0,
 };
 
@@ -80,19 +80,14 @@ interface TimelineState {
   isRightPanelOpen: boolean;
 
   mediaAssets: MediaAsset[];
-  tracks: Track[];
   markers: TimelineMarker[];
+  tracks: Track[];
   selectedClipId: string | null;
   selectedClipIds: string[];
-  copiedClips: Clip[];
+  copiedClip: Clip | null;
 
   history: Track[][];
   historyIndex: number;
-  activeTransactionSnapshot: Track[] | null;
-
-  getProjectDuration: () => number;
-  saveProjectToDB: () => Promise<void>;
-  restoreProjectFromDB: () => Promise<void>;
 
   setLayoutMode: (mode: LayoutMode) => void;
   toggleLeftPanel: () => void;
@@ -111,11 +106,9 @@ interface TimelineState {
   setSnappingEnabled: (enabled: boolean) => void;
   setRippleDeleteEnabled: (enabled: boolean) => void;
 
-  // Timeline Markers
   addMarker: (time?: number, label?: string, color?: string) => void;
   removeMarker: (id: string) => void;
 
-  // Media Library Reference Counting
   isAssetReferenced: (assetId: string) => boolean;
   addMediaAsset: (asset: Omit<MediaAsset, 'id' | 'createdAt'>, fileBlob?: Blob) => string;
   deleteMediaAsset: (id: string) => Promise<boolean>;
@@ -149,13 +142,16 @@ interface TimelineState {
   copySelectedClip: () => void;
   pasteClipAtPlayhead: () => void;
 
-  // Gesture History Transaction Stack
   beginTransaction: () => void;
   commitTransaction: () => void;
   pushHistory: () => void;
   undo: () => void;
   redo: () => void;
   loadDemoProject: () => void;
+  restoreProjectFromDB: () => Promise<void>;
+  restoreProjectData: (projectState: any) => Promise<void>;
+  getProjectDuration: () => number;
+  saveProjectToDB: () => void;
 }
 
 let saveDebounceTimer: any = null;
@@ -178,88 +174,17 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   mediaAssets: [],
   markers: [],
   tracks: [
-    {
-      id: 'track-video-1',
-      name: 'Video Track 1',
-      type: 'video',
-      muted: false,
-      locked: false,
-      hidden: false,
-      clips: [],
-    },
-    {
-      id: 'track-text-1',
-      name: 'Text Track 1',
-      type: 'text',
-      muted: false,
-      locked: false,
-      hidden: false,
-      clips: [],
-    },
-    {
-      id: 'track-audio-1',
-      name: 'Audio Track 1',
-      type: 'audio',
-      muted: false,
-      locked: false,
-      hidden: false,
-      clips: [],
-    },
+    { id: 'track-v1', name: 'Main Video Track', type: 'video', locked: false, hidden: false, muted: false, clips: [] },
+    { id: 'track-a1', name: 'Main Audio Track', type: 'audio', locked: false, hidden: false, muted: false, clips: [] },
+    { id: 'track-t1', name: 'Text Track', type: 'text', locked: false, hidden: false, muted: false, clips: [] },
   ],
 
   selectedClipId: null,
   selectedClipIds: [],
-  copiedClips: [],
+  copiedClip: null,
+
   history: [],
   historyIndex: -1,
-  activeTransactionSnapshot: null,
-
-  getProjectDuration: () => {
-    const { tracks } = get();
-    let maxEnd = 10;
-    tracks.forEach((track) => {
-      track.clips.forEach((clip) => {
-        const clipEnd = clip.startTime + clip.duration;
-        if (clipEnd > maxEnd) maxEnd = clipEnd;
-      });
-    });
-    return Math.ceil(maxEnd);
-  },
-
-  saveProjectToDB: async () => {
-    set({ saveStatus: 'Saving...' });
-    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
-
-    saveDebounceTimer = setTimeout(async () => {
-      const state = get();
-      const projectData = {
-        aspectRatio: state.aspectRatio,
-        zoomLevel: state.zoomLevel,
-        maxTimelineDuration: state.maxTimelineDuration,
-        tracks: state.tracks,
-        mediaAssets: state.mediaAssets,
-        markers: state.markers,
-      };
-      await saveProjectStateToIndexedDB(projectData);
-      set({ saveStatus: 'Saved' });
-    }, 500);
-  },
-
-  restoreProjectFromDB: async () => {
-    const rawState = await loadProjectStateFromIndexedDB();
-    if (rawState) {
-      const { tracks, mediaAssets } = await restoreProjectWithMediaBlobs(rawState);
-      set({
-        aspectRatio: rawState.aspectRatio || '16:9',
-        zoomLevel: rawState.zoomLevel || 40,
-        maxTimelineDuration: rawState.maxTimelineDuration || 60,
-        tracks: tracks || [],
-        mediaAssets: mediaAssets || [],
-        markers: rawState.markers || [],
-        saveStatus: 'Saved',
-      });
-    }
-  },
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
   toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
@@ -269,101 +194,82 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: Math.max(0, time) }),
-  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(400, zoom)) }),
+  setZoomLevel: (zoom) => set({ zoomLevel: Math.max(10, Math.min(200, zoom)) }),
   setAspectRatio: (ratio) => {
     set({ aspectRatio: ratio });
     get().saveProjectToDB();
   },
+
   setSelectedClipId: (id) => set({ selectedClipId: id, selectedClipIds: id ? [id] : [] }),
-  toggleSelectClipId: (id) => {
-    const { selectedClipIds } = get();
-    if (selectedClipIds.includes(id)) {
-      const next = selectedClipIds.filter((i) => i !== id);
-      set({ selectedClipIds: next, selectedClipId: next[next.length - 1] || null });
-    } else {
-      const next = [...selectedClipIds, id];
-      set({ selectedClipIds: next, selectedClipId: id });
-    }
-  },
-  setSelectedClipIds: (ids) => set({ selectedClipIds: ids, selectedClipId: ids[0] || null }),
+  toggleSelectClipId: (id) =>
+    set((state) => {
+      const exists = state.selectedClipIds.includes(id);
+      const updated = exists ? state.selectedClipIds.filter((i) => i !== id) : [...state.selectedClipIds, id];
+      return { selectedClipIds: updated, selectedClipId: updated.length > 0 ? updated[updated.length - 1] : null };
+    }),
+
+  setSelectedClipIds: (ids) => set({ selectedClipIds: ids, selectedClipId: ids.length > 0 ? ids[0] : null }),
   clearSelection: () => set({ selectedClipId: null, selectedClipIds: [] }),
   setSnappingEnabled: (enabled) => set({ snappingEnabled: enabled }),
   setRippleDeleteEnabled: (enabled) => set({ rippleDeleteEnabled: enabled }),
 
-  addMarker: (time, label, color) => {
-    const markerTime = time ?? get().currentTime;
+  addMarker: (time, label = 'Marker', color = '#00f2fe') => {
+    get().pushHistory();
+    const markerTime = time !== undefined ? time : get().currentTime;
     const newMarker: TimelineMarker = {
       id: `marker-${Date.now()}`,
       time: markerTime,
-      label: label || `Marker ${get().markers.length + 1}`,
-      color: color || '#00f2fe',
+      label,
+      color,
     };
     set((state) => ({ markers: [...state.markers, newMarker] }));
     get().saveProjectToDB();
   },
 
   removeMarker: (id) => {
+    get().pushHistory();
     set((state) => ({ markers: state.markers.filter((m) => m.id !== id) }));
     get().saveProjectToDB();
   },
 
-  // Check if assetId is referenced by any timeline clip
   isAssetReferenced: (assetId) => {
     const { tracks } = get();
-    return tracks.some((t) => t.clips.some((c) => c.assetId === assetId));
+    for (const track of tracks) {
+      if (track.clips.some((clip) => clip.assetId === assetId)) return true;
+    }
+    return false;
   },
 
-  addMediaAsset: (assetData, fileBlob) => {
-    const id = `asset-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+  addMediaAsset: (assetData) => {
+    const id = `asset-${Date.now()}`;
     const newAsset: MediaAsset = {
       ...assetData,
       id,
-      assetId: id,
       createdAt: Date.now(),
     };
-
-    if (fileBlob) {
-      saveMediaAssetBlob({
-        id,
-        name: assetData.name,
-        mimeType: fileBlob.type || 'video/mp4',
-        type: assetData.type as any,
-        blob: fileBlob,
-        size: fileBlob.size,
-        duration: assetData.duration,
-      });
-    }
-
     set((state) => ({ mediaAssets: [...state.mediaAssets, newAsset] }));
     get().saveProjectToDB();
     return id;
   },
 
   deleteMediaAsset: async (id) => {
-    if (get().isAssetReferenced(id)) {
-      alert(`Cannot delete asset: it is currently referenced by clips on the timeline!`);
-      return false;
-    }
-
-    await deleteMediaAssetBlob(id);
-    set((state) => ({
-      mediaAssets: state.mediaAssets.filter((a) => a.id !== id),
-    }));
+    if (get().isAssetReferenced(id)) return false;
+    set((state) => ({ mediaAssets: state.mediaAssets.filter((a) => a.id !== id) }));
     get().saveProjectToDB();
     return true;
   },
 
   addTrack: (type, name) => {
     get().pushHistory();
+    const count = get().tracks.filter((t) => t.type === type).length + 1;
     const id = `track-${type}-${Date.now()}`;
-    const trackName = name || `${type.charAt(0).toUpperCase() + type.slice(1)} Track ${get().tracks.length + 1}`;
     const newTrack: Track = {
       id,
-      name: trackName,
+      name: name || `${type.charAt(0).toUpperCase() + type.slice(1)} Track ${count}`,
       type,
-      muted: false,
       locked: false,
       hidden: false,
+      muted: false,
       clips: [],
     };
     set((state) => ({ tracks: [...state.tracks, newTrack] }));
@@ -373,9 +279,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   deleteTrack: (trackId) => {
     get().pushHistory();
-    set((state) => ({
-      tracks: state.tracks.filter((t) => t.id !== trackId),
-    }));
+    set((state) => ({ tracks: state.tracks.filter((t) => t.id !== trackId) }));
     get().saveProjectToDB();
   },
 
@@ -444,7 +348,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     return id;
   },
 
-  // Priority 1: Direct Canvas Text Creation helper
   addTextClipDirectlyOnCanvas: (initialContent = 'Type here') => {
     let textTrack = get().tracks.find((t) => t.type === 'text');
     let textTrackId = textTrack?.id || get().addTrack('text', 'Text Track 1');
@@ -707,7 +610,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     });
   },
 
-  // Priority 6: Track-Aware Ripple Delete
   deleteSelectedClip: () => {
     const { selectedClipIds, rippleDeleteEnabled, tracks } = get();
     if (selectedClipIds.length === 0) return;
@@ -723,7 +625,6 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
           return { ...track, clips: remainingClips };
         }
 
-        // Track-Aware Ripple Shift
         const sortedDeleted = [...deletedOnTrack].sort((a, b) => a.startTime - b.startTime);
         const rippledClips = remainingClips.map((clip) => {
           const deletedBefore = sortedDeleted.filter((dc) => dc.startTime < clip.startTime);
@@ -779,58 +680,46 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     selectedClipIds.forEach((id) => {
       for (const track of tracks) {
         const clip = track.clips.find((c) => c.id === id);
-        if (clip) clipsToCopy.push({ ...clip });
+        if (clip) {
+          clipsToCopy.push(clip);
+          break;
+        }
       }
     });
 
     if (clipsToCopy.length > 0) {
-      set({ copiedClips: clipsToCopy });
+      set({ copiedClip: clipsToCopy[0] });
     }
   },
 
   pasteClipAtPlayhead: () => {
-    const { copiedClips, currentTime, tracks } = get();
-    if (copiedClips.length === 0) return;
+    const { copiedClip, currentTime, tracks } = get();
+    if (!copiedClip) return;
 
-    get().pushHistory();
-    const minStart = Math.min(...copiedClips.map((c) => c.startTime));
+    let targetTrack = tracks.find((t) => t.type === copiedClip.type);
+    let targetTrackId = targetTrack?.id || get().addTrack(copiedClip.type);
 
-    copiedClips.forEach((clip) => {
-      const targetTrack = tracks.find((t) => t.type === clip.type) || tracks[0];
-      const offsetFromMin = clip.startTime - minStart;
-
-      get().addClipToTrack(targetTrack.id, {
-        ...clip,
-        id: undefined,
-        startTime: currentTime + offsetFromMin,
-      });
+    get().addClipToTrack(targetTrackId, {
+      ...copiedClip,
+      id: undefined,
+      startTime: currentTime,
     });
   },
 
-  // Priority 5: Gesture Transaction Stack (beginTransaction / commitTransaction)
   beginTransaction: () => {
-    const { tracks } = get();
-    set({ activeTransactionSnapshot: JSON.parse(JSON.stringify(tracks)) });
+    get().pushHistory();
   },
 
   commitTransaction: () => {
-    const { activeTransactionSnapshot, history, historyIndex } = get();
-    if (activeTransactionSnapshot) {
-      const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push(activeTransactionSnapshot);
-      set({
-        history: newHistory,
-        historyIndex: newHistory.length - 1,
-        activeTransactionSnapshot: null,
-        saveStatus: 'Unsaved changes',
-      });
-    }
+    get().saveProjectToDB();
   },
 
   pushHistory: () => {
     const { tracks, history, historyIndex } = get();
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(JSON.parse(JSON.stringify(tracks)));
+    if (newHistory.length > 50) newHistory.shift();
+
     set({
       history: newHistory,
       historyIndex: newHistory.length - 1,
@@ -841,10 +730,10 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   undo: () => {
     const { history, historyIndex } = get();
     if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
+      const prevTracks = history[historyIndex - 1];
       set({
-        tracks: JSON.parse(JSON.stringify(history[newIndex])),
-        historyIndex: newIndex,
+        tracks: JSON.parse(JSON.stringify(prevTracks)),
+        historyIndex: historyIndex - 1,
         saveStatus: 'Unsaved changes',
       });
       get().saveProjectToDB();
@@ -854,17 +743,92 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
   redo: () => {
     const { history, historyIndex } = get();
     if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
+      const nextTracks = history[historyIndex + 1];
       set({
-        tracks: JSON.parse(JSON.stringify(history[newIndex])),
-        historyIndex: newIndex,
+        tracks: JSON.parse(JSON.stringify(nextTracks)),
+        historyIndex: historyIndex + 1,
         saveStatus: 'Unsaved changes',
       });
       get().saveProjectToDB();
     }
   },
 
+  getProjectDuration: () => {
+    const { tracks } = get();
+    let max = 10;
+    tracks.forEach((t) => {
+      t.clips.forEach((c) => {
+        const end = c.startTime + c.duration;
+        if (end > max) max = end;
+      });
+    });
+    return max;
+  },
+
+  saveProjectToDB: () => {
+    set({ saveStatus: 'Saving...' });
+    if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+
+    saveDebounceTimer = setTimeout(async () => {
+      const { aspectRatio, tracks, mediaAssets, markers } = get();
+      const duration = get().getProjectDuration();
+
+      const stateToSave: ProjectState = {
+        id: 'default_project',
+        name: localStorage.getItem('ak_cut_project_name') || 'Untitled Project',
+        updatedAt: Date.now(),
+        aspectRatio,
+        duration,
+        tracks,
+        mediaAssets,
+        markers,
+      };
+
+      try {
+        await saveProject(stateToSave);
+        set({ saveStatus: 'Saved' });
+      } catch (err) {
+        console.error('Autosave Error:', err);
+        set({ saveStatus: 'Unsaved changes' });
+      }
+    }, 400);
+  },
+
+  restoreProjectFromDB: async () => {
+    try {
+      const state = await loadProject();
+      if (state) {
+        const restored = await restoreProjectWithMediaBlobs(state);
+        set({
+          aspectRatio: state.aspectRatio || '16:9',
+          tracks: restored.tracks || state.tracks,
+          mediaAssets: restored.mediaAssets || state.mediaAssets,
+          markers: state.markers || [],
+          saveStatus: 'Saved',
+        });
+      }
+    } catch (e) {
+      console.error('Failed to restore project state:', e);
+    }
+  },
+
+  restoreProjectData: async (projectState: any) => {
+    try {
+      const restored = await restoreProjectWithMediaBlobs(projectState);
+      set({
+        aspectRatio: projectState.aspectRatio || '16:9',
+        tracks: restored.tracks || projectState.tracks,
+        mediaAssets: restored.mediaAssets || projectState.mediaAssets,
+        markers: projectState.markers || [],
+        saveStatus: 'Saved',
+      });
+      get().saveProjectToDB();
+    } catch (e) {
+      console.error('Failed to restore project data:', e);
+    }
+  },
+
   loadDemoProject: () => {
-    get().restoreProjectFromDB();
+    set({ saveStatus: 'Saved' });
   },
 }));

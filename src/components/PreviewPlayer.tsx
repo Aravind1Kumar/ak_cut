@@ -1,78 +1,36 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Sparkles, RotateCw } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  Maximize,
+  Grid,
+  Scissors,
+  Copy,
+  Trash2,
+  Lock,
+  Eye,
+  EyeOff,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { Clip, Track } from '../types/timeline';
-import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
-import { renderTransitionEffect } from '../utils/transitionEngine';
+import { Clip, Keyframe } from '../types/timeline';
+import { renderTransitionEffect, findPreviousClipOnSameTrack } from '../utils/transitionEngine';
 import { renderCaption, DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
-
-function findPreviousClipOnSameTrack(tracks: Track[], incomingClip: Clip): Clip | null {
-  const track = tracks.find((t) => t.id === incomingClip.trackId);
-  if (!track) return null;
-
-  const sortedClips = [...track.clips].sort((a, b) => a.startTime - b.startTime);
-  const incomingIndex = sortedClips.findIndex((c) => c.id === incomingClip.id);
-
-  if (incomingIndex > 0) {
-    return sortedClips[incomingIndex - 1];
-  }
-
-  return null;
-}
-
-function getInterpolatedTransform(clip: Clip, relTime: number) {
-  if (!clip.keyframes || clip.keyframes.length === 0) {
-    return clip.transform;
-  }
-
-  const sortedKfs = [...clip.keyframes].sort((a, b) => a.time - b.time);
-
-  if (relTime <= sortedKfs[0].time) {
-    return { ...clip.transform, ...sortedKfs[0].transform };
-  }
-
-  if (relTime >= sortedKfs[sortedKfs.length - 1].time) {
-    return { ...clip.transform, ...sortedKfs[sortedKfs.length - 1].transform };
-  }
-
-  for (let i = 0; i < sortedKfs.length - 1; i++) {
-    const kf1 = sortedKfs[i];
-    const kf2 = sortedKfs[i + 1];
-
-    if (relTime >= kf1.time && relTime <= kf2.time) {
-      const factor = (relTime - kf1.time) / (kf2.time - kf1.time);
-      const t1 = { ...clip.transform, ...kf1.transform };
-      const t2 = { ...clip.transform, ...kf2.transform };
-
-      return {
-        x: t1.x + (t2.x - t1.x) * factor,
-        y: t1.y + (t2.y - t1.y) * factor,
-        scale: t1.scale + (t2.scale - t1.scale) * factor,
-        rotation: t1.rotation + (t2.rotation - t1.rotation) * factor,
-        opacity: t1.opacity + (t2.opacity - t1.opacity) * factor,
-      };
-    }
-  }
-
-  return clip.transform;
-}
+import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
 
 export const PreviewPlayer: React.FC = () => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [containerBounds, setContainerBounds] = useState({ width: 0, height: 0 });
   const [canvasDimensions, setCanvasDimensions] = useState({ width: 1280, height: 720 });
-  const [containerBounds, setContainerBounds] = useState({ width: 800, height: 450 });
+
   const [showSafeZones, setShowSafeZones] = useState(false);
-
-  const [isEditingCanvasText, setIsEditingCanvasText] = useState(false);
-  const [canvasEditingTextContent, setCanvasEditingTextContent] = useState('');
-
   const [canvasDragState, setCanvasDragState] = useState<{
     type: 'move' | 'scale' | 'rotate';
     startX: number;
     startY: number;
-    initialTransform: { x: number; y: number; scale: number; rotation: number };
+    initialTransform: Clip['transform'];
   } | null>(null);
 
   const {
@@ -84,7 +42,6 @@ export const PreviewPlayer: React.FC = () => {
     setIsPlaying,
     setCurrentTime,
     updateClipTransform,
-    updateClipText,
     beginTransaction,
     commitTransaction,
     getProjectDuration,
@@ -179,58 +136,82 @@ export const PreviewPlayer: React.FC = () => {
     const deltaY = e.clientY - canvasDragState.startY;
 
     if (canvasDragState.type === 'move') {
-      const newX = canvasDragState.initialTransform.x + (deltaX / containerBounds.width) * 100;
-      const newY = canvasDragState.initialTransform.y + (deltaY / containerBounds.height) * 100;
-      updateClipTransform(selectedClip.id, { x: newX, y: newY });
+      const percentX = canvasDragState.initialTransform.x + (deltaX / (containerBounds.width || 1)) * 100;
+      const percentY = canvasDragState.initialTransform.y + (deltaY / (containerBounds.height || 1)) * 100;
+      updateClipTransform(selectedClip.id, { x: percentX, y: percentY });
     } else if (canvasDragState.type === 'scale') {
-      const scaleDelta = deltaX / 200;
-      const newScale = Math.max(0.1, Math.min(4.0, canvasDragState.initialTransform.scale + scaleDelta));
+      const scaleDelta = (deltaX + deltaY) * 0.005;
+      const newScale = Math.max(0.1, Math.min(3.0, canvasDragState.initialTransform.scale + scaleDelta));
       updateClipTransform(selectedClip.id, { scale: newScale });
     } else if (canvasDragState.type === 'rotate') {
-      const newRot = (canvasDragState.initialTransform.rotation + deltaX) % 360;
-      updateClipTransform(selectedClip.id, { rotation: newRot });
+      const rotationDelta = deltaX * 0.5;
+      updateClipTransform(selectedClip.id, { rotation: canvasDragState.initialTransform.rotation + rotationDelta });
     }
   };
 
   const handleCanvasMouseUp = () => {
     if (canvasDragState) {
-      commitTransaction();
       setCanvasDragState(null);
+      commitTransaction();
     }
   };
 
-  const handleTextDoubleClick = () => {
-    if (selectedClip && selectedClip.type === 'text' && selectedClip.text) {
-      setCanvasEditingTextContent(selectedClip.text.content);
-      setIsEditingCanvasText(true);
+  const interpolateTransform = (clip: Clip, relTime: number): Clip['transform'] => {
+    if (!clip.keyframes || clip.keyframes.length === 0) return clip.transform;
+
+    const sorted = [...clip.keyframes].sort((a, b) => a.time - b.time);
+    if (relTime <= sorted[0].time) {
+      return { ...clip.transform, ...sorted[0].transform };
     }
+    if (relTime >= sorted[sorted.length - 1].time) {
+      return { ...clip.transform, ...sorted[sorted.length - 1].transform };
+    }
+
+    let prevKf = sorted[0];
+    let nextKf = sorted[sorted.length - 1];
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (relTime >= sorted[i].time && relTime <= sorted[i + 1].time) {
+        prevKf = sorted[i];
+        nextKf = sorted[i + 1];
+        break;
+      }
+    }
+
+    const duration = nextKf.time - prevKf.time;
+    const progress = duration > 0 ? (relTime - prevKf.time) / duration : 1;
+
+    const interpX = (prevKf.transform.x ?? clip.transform.x) + ((nextKf.transform.x ?? clip.transform.x) - (prevKf.transform.x ?? clip.transform.x)) * progress;
+    const interpY = (prevKf.transform.y ?? clip.transform.y) + ((nextKf.transform.y ?? clip.transform.y) - (prevKf.transform.y ?? clip.transform.y)) * progress;
+    const interpScale = (prevKf.transform.scale ?? clip.transform.scale) + ((nextKf.transform.scale ?? clip.transform.scale) - (prevKf.transform.scale ?? clip.transform.scale)) * progress;
+    const interpRot = (prevKf.transform.rotation ?? clip.transform.rotation) + ((nextKf.transform.rotation ?? clip.transform.rotation) - (prevKf.transform.rotation ?? clip.transform.rotation)) * progress;
+
+    return {
+      ...clip.transform,
+      x: interpX,
+      y: interpY,
+      scale: interpScale,
+      rotation: interpRot,
+    };
   };
 
-  const handleFinishInlineTextEdit = () => {
-    if (selectedClip && selectedClip.type === 'text') {
-      updateClipText(selectedClip.id, { content: canvasEditingTextContent });
-    }
-    setIsEditingCanvasText(false);
-  };
-
-  // Main Canvas Render Loop
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const { width, height } = canvasDimensions;
-    canvas.width = width;
-    canvas.height = height;
 
-    ctx.fillStyle = '#0a0a0c';
+    ctx.clearRect(0, 0, width, height);
+
+    ctx.fillStyle = '#090d16';
     ctx.fillRect(0, 0, width, height);
 
     const visibleClips: Clip[] = [];
+
     tracks.forEach((track) => {
-      if (track.hidden) return; // Enforce track visibility
+      if (track.hidden) return;
       track.clips.forEach((clip) => {
         if (currentTime >= clip.startTime && currentTime <= clip.startTime + clip.duration) {
           visibleClips.push(clip);
@@ -240,31 +221,51 @@ export const PreviewPlayer: React.FC = () => {
 
     const drawSingleClip = (clip: Clip) => {
       const relTime = currentTime - clip.startTime;
-      const currentTransform = getInterpolatedTransform(clip, relTime);
+      const currentTransform = interpolateTransform(clip, relTime);
 
       ctx.save();
 
-      const centerX = width / 2 + (currentTransform.x / 100) * width;
-      const centerY = height / 2 + (currentTransform.y / 100) * height;
-      ctx.translate(centerX, centerY);
+      const posX = (currentTransform.x / 100) * width;
+      const posY = (currentTransform.y / 100) * height;
+
+      ctx.translate(width / 2 + posX, height / 2 + posY);
+
       ctx.rotate((currentTransform.rotation * Math.PI) / 180);
-      ctx.scale(currentTransform.scale, currentTransform.scale);
+
+      const flipX = currentTransform.flipHorizontal ? -1 : 1;
+      const flipY = currentTransform.flipVertical ? -1 : 1;
+      ctx.scale(currentTransform.scale * flipX, currentTransform.scale * flipY);
+
       ctx.globalAlpha = Math.max(0, Math.min(1, currentTransform.opacity));
 
       const f = clip.filter;
-      ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
+      const expBrightness = f.brightness + (f.exposure || 0);
+      const tempHue = f.hueRotate + (f.temperature || 0);
+      ctx.filter = `brightness(${expBrightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${tempHue}deg) sepia(${f.sepia}%)`;
+
+      const cropTop = (currentTransform.cropTop || 0) / 100;
+      const cropBottom = (currentTransform.cropBottom || 0) / 100;
+      const cropLeft = (currentTransform.cropLeft || 0) / 100;
+      const cropRight = (currentTransform.cropRight || 0) / 100;
 
       if (clip.type === 'image') {
         const img = imageElementsMap.current.get(clip.id);
         if (img && img.complete) {
-          const aspect = (img.naturalWidth || width) / (img.naturalHeight || height);
+          const natW = img.naturalWidth || width;
+          const natH = img.naturalHeight || height;
+          const sx = natW * cropLeft;
+          const sy = natH * cropTop;
+          const sw = natW * (1 - cropLeft - cropRight);
+          const sh = natH * (1 - cropTop - cropBottom);
+
+          const aspect = sw / sh;
           let drawW = width;
           let drawH = width / aspect;
           if (drawH < height) {
             drawH = height;
             drawW = height * aspect;
           }
-          ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+          ctx.drawImage(img, sx, sy, sw, sh, -drawW / 2, -drawH / 2, drawW, drawH);
         }
       } else if (clip.type === 'video') {
         const vid = videoElementsMap.current.get(clip.id);
@@ -273,14 +274,21 @@ export const PreviewPlayer: React.FC = () => {
           if (Math.abs(vid.currentTime - mediaTime) > 0.05) {
             vid.currentTime = mediaTime;
           }
-          const aspect = (vid.videoWidth || width) / (vid.videoHeight || height);
+          const natW = vid.videoWidth || width;
+          const natH = vid.videoHeight || height;
+          const sx = natW * cropLeft;
+          const sy = natH * cropTop;
+          const sw = natW * (1 - cropLeft - cropRight);
+          const sh = natH * (1 - cropTop - cropBottom);
+
+          const aspect = sw / sh;
           let drawW = width;
           let drawH = width / aspect;
           if (drawH < height) {
             drawH = height;
             drawW = height * aspect;
           }
-          ctx.drawImage(vid, -drawW / 2, -drawH / 2, drawW, drawH);
+          ctx.drawImage(vid, sx, sy, sw, sh, -drawW / 2, -drawH / 2, drawW, drawH);
         }
       } else if (clip.type === 'text' && clip.text) {
         const text = clip.text;
@@ -309,7 +317,6 @@ export const PreviewPlayer: React.FC = () => {
         ctx.fillStyle = text.color;
         ctx.fillText(text.content, 0, 0);
       } else if (clip.type === 'caption' && clip.caption) {
-        // Phase 3A: Invoke Shared Canonical Caption Renderer
         const style = DEFAULT_CAPTION_STYLES[clip.caption.stylePreset] || DEFAULT_CAPTION_STYLES.social;
         const segment = clip.caption.segment || {
           id: clip.id,
@@ -381,25 +388,24 @@ export const PreviewPlayer: React.FC = () => {
           setIsPlaying(false);
         } else {
           setCurrentTime(nextTime);
+          animId = requestAnimationFrame(step);
         }
       }
-      animId = requestAnimationFrame(step);
     };
 
     if (isPlaying) {
+      lastTime = performance.now();
       animId = requestAnimationFrame(step);
     }
 
     return () => cancelAnimationFrame(animId);
-  }, [isPlaying, currentTime, getProjectDuration]);
+  }, [isPlaying, currentTime]);
 
-  const aspectNum = canvasDimensions.width / canvasDimensions.height;
-  let fittedWidth = containerBounds.width;
-  let fittedHeight = containerBounds.width / aspectNum;
-
-  if (fittedHeight > containerBounds.height) {
-    fittedHeight = containerBounds.height;
-    fittedWidth = containerBounds.height * aspectNum;
+  let scaleFactor = 1;
+  if (containerBounds.width > 0 && containerBounds.height > 0) {
+    const scaleW = containerBounds.width / canvasDimensions.width;
+    const scaleH = containerBounds.height / canvasDimensions.height;
+    scaleFactor = Math.min(scaleW, scaleH) * 0.92;
   }
 
   return (
@@ -407,101 +413,71 @@ export const PreviewPlayer: React.FC = () => {
       ref={containerRef}
       onMouseMove={handleCanvasMouseMove}
       onMouseUp={handleCanvasMouseUp}
-      className="flex-1 bg-dark-950 flex flex-col items-center justify-center p-4 relative overflow-hidden select-none"
+      className="flex-1 bg-dark-950 flex flex-col items-center justify-center relative select-none overflow-hidden p-4"
     >
+      <div className="absolute top-3 right-3 flex items-center space-x-2 z-20">
+        <button
+          onClick={() => setShowSafeZones(!showSafeZones)}
+          className={`p-1.5 rounded-lg border text-xs font-semibold flex items-center space-x-1.5 transition ${
+            showSafeZones
+              ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
+              : 'bg-dark-800/80 text-gray-400 border-dark-700 hover:text-white'
+          }`}
+          title="Toggle Social Safe Zones"
+        >
+          <Grid className="w-4 h-4" />
+          <span className="hidden sm:inline">Safe Zone</span>
+        </button>
+      </div>
+
       <div
-        className="relative shadow-2xl rounded-lg overflow-hidden border border-dark-700 bg-black flex items-center justify-center"
-        style={{ width: `${fittedWidth}px`, height: `${fittedHeight}px` }}
+        className="relative bg-black rounded-xl shadow-2xl overflow-hidden border border-dark-800 flex items-center justify-center transition-all duration-150"
+        style={{
+          width: canvasDimensions.width * scaleFactor,
+          height: canvasDimensions.height * scaleFactor,
+        }}
       >
-        <canvas ref={canvasRef} className="w-full h-full object-contain" />
+        <canvas
+          ref={canvasRef}
+          width={canvasDimensions.width}
+          height={canvasDimensions.height}
+          className="w-full h-full object-contain pointer-events-auto cursor-move"
+          onMouseDown={(e) => handleCanvasMouseDown(e, 'move')}
+        />
 
         {selectedClip && (
           <div
-            onMouseDown={(e) => handleCanvasMouseDown(e, 'move')}
-            onDoubleClick={handleTextDoubleClick}
+            className="absolute inset-0 pointer-events-none border-2 border-cyan-400/80 rounded"
             style={{
-              left: `${50 + selectedClip.transform.x}%`,
-              top: `${50 + selectedClip.transform.y}%`,
-              transform: `translate(-50%, -50%) rotate(${selectedClip.transform.rotation}deg) scale(${selectedClip.transform.scale})`,
+              transform: `translate(${selectedClip.transform.x}%, ${selectedClip.transform.y}%) rotate(${selectedClip.transform.rotation}deg) scale(${selectedClip.transform.scale})`,
             }}
-            className="absolute border-2 border-cyan-400 p-4 cursor-move flex items-center justify-center group z-30"
           >
-            {isEditingCanvasText ? (
-              <input
-                type="text"
-                autoFocus
-                value={canvasEditingTextContent}
-                onChange={(e) => setCanvasEditingTextContent(e.target.value)}
-                onBlur={handleFinishInlineTextEdit}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === 'Escape') handleFinishInlineTextEdit();
-                }}
-                className="bg-black/90 text-cyan-300 font-bold text-lg px-2 py-1 outline-none border border-cyan-400 rounded shadow-xl min-w-[150px] text-center"
-              />
-            ) : (
-              <span className="text-white text-xs font-bold pointer-events-none select-none opacity-0 group-hover:opacity-100 bg-black/60 px-2 py-0.5 rounded">
-                Double Click to Edit Text
-              </span>
-            )}
-
             <div
               onMouseDown={(e) => handleCanvasMouseDown(e, 'scale')}
-              className="absolute -right-2 -bottom-2 w-4 h-4 bg-cyan-400 border-2 border-white rounded-full cursor-se-resize shadow-md"
+              className="absolute -top-2 -right-2 w-4 h-4 bg-cyan-400 rounded-full cursor-nwse-resize pointer-events-auto border-2 border-black shadow"
               title="Drag to Scale"
             />
-
             <div
               onMouseDown={(e) => handleCanvasMouseDown(e, 'rotate')}
-              className="absolute -top-6 left-1/2 transform -translate-x-1/2 w-5 h-5 bg-cyan-400 border-2 border-white rounded-full flex items-center justify-center cursor-grab shadow-md"
+              className="absolute -top-6 left-1/2 -translate-x-1/2 w-4 h-4 bg-cyan-400 rounded-full cursor-grab pointer-events-auto border-2 border-black shadow"
               title="Drag to Rotate"
-            >
-              <RotateCw className="w-3 h-3 text-black" />
-            </div>
+            />
           </div>
         )}
       </div>
 
-      <div className="absolute top-4 right-4 flex items-center space-x-2 bg-dark-900/80 backdrop-blur-md border border-dark-700 rounded-lg p-1.5 z-20">
-        <button
-          onClick={() => setShowSafeZones(!showSafeZones)}
-          className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold transition ${
-            showSafeZones ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40' : 'text-gray-400 hover:text-gray-200'
-          }`}
-          title="Toggle Social Safe-Zones Overlay"
-        >
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Safe Zones</span>
-        </button>
-      </div>
-
-      <div className="mt-4 flex items-center space-x-4 bg-dark-800/90 border border-dark-700 rounded-xl px-5 py-2 z-20 shadow-lg">
-        <button
-          onClick={() => setCurrentTime(0)}
-          className="p-1.5 text-gray-400 hover:text-white rounded-lg transition"
-          title="Jump to Start (Home)"
-        >
-          <SkipBack className="w-4 h-4" />
-        </button>
-
+      <div className="h-12 bg-dark-900/90 border border-dark-700/80 rounded-2xl mt-3 px-4 flex items-center justify-between space-x-4 shadow-xl z-20">
         <button
           onClick={() => setIsPlaying(!isPlaying)}
-          className="w-10 h-10 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white rounded-full flex items-center justify-center shadow-lg transition transform active:scale-95"
+          className="w-8 h-8 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white flex items-center justify-center shadow-lg transition transform active:scale-95"
         >
-          {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+          {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-0.5" />}
         </button>
 
-        <button
-          onClick={() => setCurrentTime(getProjectDuration())}
-          className="p-1.5 text-gray-400 hover:text-white rounded-lg transition"
-          title="Jump to End (End)"
-        >
-          <SkipForward className="w-4 h-4" />
-        </button>
-
-        <div className="h-4 w-[1px] bg-dark-700 mx-1" />
-
-        <div className="font-mono text-xs text-cyan-400 font-semibold min-w-[70px]">
-          {currentTime.toFixed(2)}s / {getProjectDuration()}s
+        <div className="font-mono text-xs font-bold text-gray-200 tracking-wider">
+          <span className="text-cyan-400">{currentTime.toFixed(2)}s</span>
+          <span className="text-gray-500 mx-1">/</span>
+          <span>{getProjectDuration().toFixed(2)}s</span>
         </div>
       </div>
     </div>

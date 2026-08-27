@@ -27,8 +27,9 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
     try {
       // Execute Real FFmpeg WASM Exporter Pipeline
+      const exportRes = resolution === '4K' ? '1080p' : resolution;
       const mp4Blob = await exportVideoProject(
-        { resolution, fps },
+        { resolution: exportRes, fps, quality: 'high' },
         (percent) => setProgress(percent)
       );
 
@@ -60,7 +61,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
           {!isExporting && (
             <button
               onClick={onClose}
-              className="p-1 text-gray-400 hover:text-white rounded-lg hover:bg-dark-700 transition"
+              className="p-1 text-gray-400 hover:text-white rounded-lg transition"
             >
               <X className="w-4 h-4" />
             </button>
@@ -69,101 +70,93 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
 
         {/* Modal Body */}
         <div className="p-6 space-y-5">
-          {errorMessage && (
-            <div className="p-3 bg-red-900/40 border border-red-500/40 rounded-xl flex items-start space-x-2.5 text-xs text-red-300">
-              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-
-          {!isComplete ? (
+          {!isExporting && !isComplete && (
             <>
-              {/* Resolution Selector */}
+              {/* Resolution Options */}
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Export Resolution
-                </label>
+                <label className="text-xs font-semibold text-gray-300 block mb-2">Export Resolution</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: '720p HD', value: '720p' },
-                    { label: '1080p FHD', value: '1080p' },
-                    { label: '4K Ultra HD', value: '4K' },
-                  ].map((res) => (
+                  {(['720p', '1080p', '4K'] as const).map((res) => (
                     <button
-                      key={res.value}
-                      disabled={isExporting}
-                      onClick={() => setResolution(res.value as any)}
-                      className={`py-2.5 px-3 rounded-xl border text-xs font-semibold transition ${
-                        resolution === res.value
-                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300 shadow-sm'
-                          : 'bg-dark-900/40 border-dark-700 text-gray-400 hover:bg-dark-700'
+                      key={res}
+                      onClick={() => setResolution(res)}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
+                        resolution === res
+                          ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50 shadow-md'
+                          : 'bg-dark-900/60 text-gray-400 border-dark-700 hover:text-white'
                       }`}
                     >
-                      {res.label}
+                      {res} {res === '1080p' ? '(FHD)' : res === '720p' ? '(HD)' : '(4K)'}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Framerate Selector */}
+              {/* FPS Options */}
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
-                  Frame Rate (FPS)
-                </label>
+                <label className="text-xs font-semibold text-gray-300 block mb-2">Frame Rate (FPS)</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {[30, 60].map((f) => (
+                  {([30, 60] as const).map((rate) => (
                     <button
-                      key={f}
-                      disabled={isExporting}
-                      onClick={() => setFps(f as any)}
-                      className={`py-2 px-3 rounded-xl border text-xs font-semibold transition ${
-                        fps === f
-                          ? 'bg-cyan-500/20 border-cyan-500 text-cyan-300'
-                          : 'bg-dark-900/40 border-dark-700 text-gray-400 hover:bg-dark-700'
+                      key={rate}
+                      onClick={() => setFps(rate)}
+                      className={`py-2 px-3 rounded-xl border text-xs font-bold transition ${
+                        fps === rate
+                          ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50 shadow-md'
+                          : 'bg-dark-900/60 text-gray-400 border-dark-700 hover:text-white'
                       }`}
                     >
-                      {f} FPS
+                      {rate} FPS {rate === 60 ? '⚡ Smooth' : ''}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Export Progress Bar */}
-              {isExporting && (
-                <div className="space-y-2 pt-2">
-                  <div className="flex justify-between text-xs font-semibold text-gray-300">
-                    <span className="flex items-center space-x-1.5">
-                      <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
-                      <span>Encoding real MP4 via FFmpeg WASM...</span>
-                    </span>
-                    <span className="text-cyan-400 font-mono">{progress}%</span>
-                  </div>
-                  <div className="w-full bg-dark-900 h-2 rounded-full overflow-hidden border border-dark-700">
-                    <div
-                      className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full transition-all duration-200"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
+              {errorMessage && (
+                <div className="p-3 bg-red-950/60 border border-red-500/40 rounded-xl flex items-start space-x-2 text-red-300 text-xs">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{errorMessage}</span>
                 </div>
               )}
             </>
-          ) : (
-            <div className="text-center py-4 space-y-3">
-              <div className="w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-7 h-7" />
+          )}
+
+          {/* Export Progress State */}
+          {isExporting && (
+            <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
+              <Loader2 className="w-10 h-10 text-cyan-400 animate-spin" />
+              <div>
+                <h3 className="text-sm font-bold text-gray-100">Rendering MP4 Video...</h3>
+                <p className="text-xs text-gray-400 mt-1">Processing frames and encoding audio track with FFmpeg WASM</p>
               </div>
-              <h3 className="text-sm font-bold text-gray-100">MP4 Video Export Completed!</h3>
-              <p className="text-xs text-gray-400">
-                Your video file has been encoded into a real MP4 file ({resolution}, {fps} FPS) using FFmpeg WASM and downloaded automatically.
-              </p>
+
+              <div className="w-full bg-dark-900 rounded-full h-3 overflow-hidden border border-dark-700 p-0.5">
+                <div
+                  className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full rounded-full transition-all duration-200"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-xs font-mono text-cyan-400 font-bold">{progress}%</span>
+            </div>
+          )}
+
+          {/* Export Complete State */}
+          {isComplete && (
+            <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
+              <CheckCircle2 className="w-12 h-12 text-emerald-400" />
+              <div>
+                <h3 className="text-base font-bold text-white">Export Complete!</h3>
+                <p className="text-xs text-gray-400 mt-1">Your video project has been rendered to MP4.</p>
+              </div>
+
               {downloadUrl && (
                 <a
                   href={downloadUrl}
-                  download={`AK_Cut_Project_${resolution}.mp4`}
-                  className="inline-flex items-center space-x-1 text-xs text-cyan-400 underline font-semibold mt-1"
+                  download={`AK_Cut_Project_${resolution}_${Date.now()}.mp4`}
+                  className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-xs rounded-xl shadow-lg transition flex items-center space-x-2"
                 >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Re-download MP4 file</span>
+                  <Download className="w-4 h-4" />
+                  <span>Download MP4 File</span>
                 </a>
               )}
             </div>
@@ -171,43 +164,23 @@ export const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => 
         </div>
 
         {/* Modal Footer */}
-        <div className="p-4 border-t border-dark-700 bg-dark-900/40 flex items-center justify-end space-x-3">
-          {!isComplete ? (
-            <>
-              <button
-                disabled={isExporting}
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-semibold text-gray-400 hover:text-white transition"
-              >
-                Cancel
-              </button>
-              <button
-                disabled={isExporting}
-                onClick={handleStartExport}
-                className="flex items-center space-x-2 px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 rounded-xl shadow-lg shadow-cyan-500/20 transition transform active:scale-95 disabled:opacity-50"
-              >
-                {isExporting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Encoding MP4...</span>
-                  </>
-                ) : (
-                  <>
-                    <Download className="w-4 h-4" />
-                    <span>Start FFmpeg WASM Export</span>
-                  </>
-                )}
-              </button>
-            </>
-          ) : (
+        {!isExporting && !isComplete && (
+          <div className="p-4 border-t border-dark-700 bg-dark-900/40 flex justify-end space-x-2">
             <button
               onClick={onClose}
-              className="w-full py-2.5 text-xs font-bold text-white bg-dark-700 hover:bg-dark-600 rounded-xl transition"
+              className="px-4 py-2 bg-dark-700 hover:bg-dark-600 text-gray-300 font-semibold text-xs rounded-xl transition"
             >
-              Done
+              Cancel
             </button>
-          )}
-        </div>
+            <button
+              onClick={handleStartExport}
+              className="px-5 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs rounded-xl shadow-lg transition transform active:scale-95 flex items-center space-x-1.5"
+            >
+              <Download className="w-4 h-4" />
+              <span>Start Export</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

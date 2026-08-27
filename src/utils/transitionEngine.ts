@@ -1,4 +1,4 @@
-import { TransitionType } from '../types/timeline';
+import { TransitionType, Clip, Track } from '../types/timeline';
 
 // Deterministic pseudo-random seed function (replaces Math.random() for frame-accurate export)
 function pseudoRandom(seed: number): number {
@@ -15,6 +15,18 @@ export interface TransitionParams {
   drawOutgoing: () => void;
   drawIncoming: () => void;
   frameSeed?: number;
+}
+
+export function findPreviousClipOnSameTrack(tracks: Track[], currentClip: Clip): Clip | null {
+  const track = tracks.find((t) => t.id === currentClip.trackId || t.clips.some((c) => c.id === currentClip.id));
+  if (!track) return null;
+
+  const sorted = [...track.clips].sort((a, b) => a.startTime - b.startTime);
+  const idx = sorted.findIndex((c) => c.id === currentClip.id);
+  if (idx > 0) {
+    return sorted[idx - 1];
+  }
+  return null;
 }
 
 export function renderTransitionEffect(
@@ -58,7 +70,6 @@ export function renderTransitionEffect(
   const p = Math.max(0, Math.min(1, progress));
 
   if (type === 'fade' || type === 'dissolve') {
-    // Crossfade: Outgoing clip A fades out, Incoming clip B fades in
     ctx.save();
     ctx.globalAlpha = 1 - p;
     drawOutgoing();
@@ -68,28 +79,7 @@ export function renderTransitionEffect(
     ctx.globalAlpha = p;
     drawIncoming();
     ctx.restore();
-  } else if (type === 'slideLeft' || type === 'slide') {
-    // Slide Left: Incoming clip B enters from RIGHT edge (+width) moving LEFT (0) over clip A
-    ctx.save();
-    drawOutgoing();
-    ctx.restore();
-
-    ctx.save();
-    ctx.translate(width * (1 - p), 0);
-    drawIncoming();
-    ctx.restore();
-  } else if (type === 'slideRight') {
-    // Slide Right: Incoming clip B enters from LEFT edge (-width) moving RIGHT (0) over clip A
-    ctx.save();
-    drawOutgoing();
-    ctx.restore();
-
-    ctx.save();
-    ctx.translate(-width * (1 - p), 0);
-    drawIncoming();
-    ctx.restore();
   } else if (type === 'wipe') {
-    // Wipe Left to Right: Reveals incoming clip B
     ctx.save();
     drawOutgoing();
     ctx.restore();
@@ -100,8 +90,27 @@ export function renderTransitionEffect(
     ctx.clip();
     drawIncoming();
     ctx.restore();
+  } else if (type === 'slideLeft') {
+    ctx.save();
+    ctx.translate(-width * p, 0);
+    drawOutgoing();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(width * (1 - p), 0);
+    drawIncoming();
+    ctx.restore();
+  } else if (type === 'slideRight') {
+    ctx.save();
+    ctx.translate(width * p, 0);
+    drawOutgoing();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(-width * (1 - p), 0);
+    drawIncoming();
+    ctx.restore();
   } else if (type === 'zoom') {
-    // Zoom In transition: Incoming clip B scales up from center
     ctx.save();
     ctx.globalAlpha = 1 - p;
     drawOutgoing();
@@ -109,14 +118,12 @@ export function renderTransitionEffect(
 
     ctx.save();
     ctx.globalAlpha = p;
-    const scale = 0.5 + 0.5 * p;
     ctx.translate(width / 2, height / 2);
-    ctx.scale(scale, scale);
+    ctx.scale(0.5 + 0.5 * p, 0.5 + 0.5 * p);
     ctx.translate(-width / 2, -height / 2);
     drawIncoming();
     ctx.restore();
   } else if (type === 'flash') {
-    // Flash White Transition
     ctx.save();
     if (p < 0.5) {
       drawOutgoing();
@@ -129,7 +136,6 @@ export function renderTransitionEffect(
     }
     ctx.restore();
   } else if (type === 'glitch') {
-    // Deterministic Glitch Shift using frameSeed (no Math.random())
     ctx.save();
     const rnd = pseudoRandom(frameSeed + p * 100);
     const offsetX = (rnd - 0.5) * 60;
@@ -142,7 +148,6 @@ export function renderTransitionEffect(
     }
     ctx.restore();
   } else if (type === 'spin') {
-    // Spin Rotate Transition
     ctx.save();
     ctx.globalAlpha = 1 - p;
     drawOutgoing();
@@ -156,14 +161,12 @@ export function renderTransitionEffect(
     drawIncoming();
     ctx.restore();
   } else if (type === 'blur') {
-    // Blur Dissolve
     ctx.save();
     ctx.filter = `blur(${Math.sin(p * Math.PI) * 15}px)`;
     if (p < 0.5) drawOutgoing();
     else drawIncoming();
     ctx.restore();
   } else {
-    // Default fallback crossfade
     ctx.save();
     ctx.globalAlpha = 1 - p;
     drawOutgoing();

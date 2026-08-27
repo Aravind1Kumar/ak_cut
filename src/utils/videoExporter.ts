@@ -1,78 +1,57 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { fetchFile } from '@ffmpeg/util';
 import { useTimelineStore } from '../store/timelineStore';
-import { Clip, Track } from '../types/timeline';
-import { getSourceTimeForTimelineTime } from './timelineMath';
-import { audioBufferToWav } from './audioWavEncoder';
-import { renderTransitionEffect } from './transitionEngine';
+import { Clip } from '../types/timeline';
+import { renderTransitionEffect, findPreviousClipOnSameTrack } from './transitionEngine';
 import { renderCaption, DEFAULT_CAPTION_STYLES } from './captionEngine';
+import { audioBufferToWav } from './audioWavEncoder';
+import { getSourceTimeForTimelineTime } from './timelineMath';
 
 export interface ExportSettings {
-  resolution: '720p' | '1080p' | '4K';
+  resolution: '720p' | '1080p';
   fps: number;
+  quality: 'medium' | 'high';
 }
 
 let ffmpegInstance: FFmpeg | null = null;
-let currentProgressListener: ((({ progress }: { progress: number }) => void)) | null = null;
 
 async function getFFmpegInstance(onProgress?: (percent: number) => void): Promise<FFmpeg> {
-  if (!ffmpegInstance) {
-    ffmpegInstance = new FFmpeg();
+  if (ffmpegInstance && ffmpegInstance.loaded) {
+    return ffmpegInstance;
   }
 
-  const ffmpeg = ffmpegInstance;
+  ffmpegInstance = new FFmpeg();
 
-  if (!ffmpeg.loaded) {
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-    await ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+  ffmpegInstance.on('progress', ({ progress }) => {
+    if (onProgress) {
+      onProgress(Math.min(99, Math.round(progress * 100)));
+    }
+  });
+
+  ffmpegInstance.on('log', ({ message }) => {
+    console.log('FFmpeg:', message);
+  });
+
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+
+  try {
+    await ffmpegInstance.load({
+      coreURL: `${baseURL}/ffmpeg-core.js`,
+      wasmURL: `${baseURL}/ffmpeg-core.wasm`,
     });
+  } catch (err) {
+    console.warn('Primary CDN failed, loading local FFmpeg fallback...', err);
+    await ffmpegInstance.load();
   }
 
-  if (currentProgressListener) {
-    ffmpeg.off('progress', currentProgressListener);
-    currentProgressListener = null;
-  }
-
-  if (onProgress) {
-    currentProgressListener = ({ progress }: { progress: number }) => {
-      const percent = Math.min(100, Math.round(progress * 100));
-      onProgress(percent);
-    };
-    ffmpeg.on('progress', currentProgressListener);
-  }
-
-  return ffmpeg;
+  return ffmpegInstance;
 }
 
-// Find Previous Clip on the SAME TRACK for Two-Clip Transition Resolution
-function findPreviousClipOnSameTrack(tracks: Track[], incomingClip: Clip): Clip | null {
-  const track = tracks.find((t) => t.id === incomingClip.trackId);
-  if (!track) return null;
-
-  const sortedClips = [...track.clips].sort((a, b) => a.startTime - b.startTime);
-  const incomingIndex = sortedClips.findIndex((c) => c.id === incomingClip.id);
-
-  if (incomingIndex > 0) {
-    return sortedClips[incomingIndex - 1];
-  }
-
-  return null;
-}
-
-// Deterministic Async Frame Seeking (Using requestVideoFrameCallback with strict Watchdog Error Throw)
-function seekVideoFrame(video: HTMLVideoElement, targetTime: number): Promise<void> {
+function seekVideoFrame(video: HTMLVideoElement, time: number): Promise<void> {
   return new Promise((resolve, reject) => {
-    const clampedTime = Math.max(0, targetTime);
-
-    const watchdog = setTimeout(() => {
-      cleanup();
-      reject(new Error(`Video Frame Decode Timeout: Failed to seek/decode frame at timestamp ${clampedTime.toFixed(2)}s.`));
-    }, 5000);
+    const clampedTime = Math.max(0, time);
 
     const cleanup = () => {
-      clearTimeout(watchdog);
       video.removeEventListener('seeked', onSeeked);
       video.removeEventListener('error', onError);
     };
@@ -106,7 +85,6 @@ function seekVideoFrame(video: HTMLVideoElement, targetTime: number): Promise<vo
   });
 }
 
-// Keyframe Interpolation for Export Renderer
 function getInterpolatedTransform(clip: Clip, relTime: number) {
   if (!clip.keyframes || clip.keyframes.length === 0) {
     return clip.transform;
@@ -137,6 +115,12 @@ function getInterpolatedTransform(clip: Clip, relTime: number) {
         scale: t1.scale + (t2.scale - t1.scale) * factor,
         rotation: t1.rotation + (t2.rotation - t1.rotation) * factor,
         opacity: t1.opacity + (t2.opacity - t1.opacity) * factor,
+        flipHorizontal: t1.flipHorizontal,
+        flipVertical: t1.flipVertical,
+        cropTop: t1.cropTop,
+        cropBottom: t1.cropBottom,
+        cropLeft: t1.cropLeft,
+        cropRight: t1.cropRight,
       };
     }
   }
@@ -158,139 +142,153 @@ export async function exportVideoProject(
 
   const ffmpeg = await getFFmpegInstance(onProgress);
 
-  // Export Canvas Dimensions
-  let width = 1920;
-  let height = 1080;
+  let width = 1280;
+  let height = 720;
+
+  if (settings.resolution === '1080p') {
+    width = 1920;
+    height = 1080;
+  }
+
   if (aspectRatio === '9:16') {
-    width = 1080;
-    height = 1920;
+    if (settings.resolution === '1080p') {
+      width = 1080;
+      height = 1920;
+    } else {
+      width = 720;
+      height = 1280;
+    }
   } else if (aspectRatio === '1:1') {
-    width = 1080;
-    height = 1080;
+    width = settings.resolution === '1080p' ? 1080 : 720;
+    height = width;
   } else if (aspectRatio === '4:5') {
-    width = 1080;
-    height = 1350;
-  } else if (aspectRatio === '4:3') {
-    width = 1440;
-    height = 1080;
-  } else if (aspectRatio === '21:9') {
-    width = 2560;
-    height = 1080;
+    width = settings.resolution === '1080p' ? 1080 : 720;
+    height = Math.round(width * 1.25);
   }
-
-  if (settings.resolution === '720p') {
-    width = Math.round(width * 0.666);
-    height = Math.round(height * 0.666);
-  } else if (settings.resolution === '4K') {
-    width = Math.round(width * 2);
-    height = Math.round(height * 2);
-  }
-
-  const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = width;
-  exportCanvas.height = height;
-  const ctx = exportCanvas.getContext('2d')!;
 
   const fps = settings.fps || 30;
-  const totalFrames = Math.ceil(duration * fps);
   const frameDuration = 1 / fps;
+  const totalFrames = Math.ceil(duration * fps);
 
-  const imageElementsMap = new Map<string, HTMLImageElement>();
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+  if (!ctx) {
+    throw new Error('Canvas 2D Context initialization failed.');
+  }
+
   const videoElementsMap = new Map<string, HTMLVideoElement>();
-  let hasAudioInput = false;
+  const imageElementsMap = new Map<string, HTMLImageElement>();
 
   try {
-    // Pre-load Media Assets
     for (const track of tracks) {
       for (const clip of track.clips) {
-        if (clip.type === 'image' && clip.src) {
+        if (clip.type === 'video' && clip.src && !videoElementsMap.has(clip.id)) {
+          const video = document.createElement('video');
+          video.crossOrigin = 'anonymous';
+          video.src = clip.src;
+          video.muted = true;
+          video.playsInline = true;
+          await new Promise<void>((resolve, reject) => {
+            const onLoaded = () => {
+              video.removeEventListener('loadeddata', onLoaded);
+              video.removeEventListener('error', onError);
+              resolve();
+            };
+            const onError = () => {
+              video.removeEventListener('loadeddata', onLoaded);
+              video.removeEventListener('error', onError);
+              reject(new Error(`Failed to load video source for clip "${clip.name}"`));
+            };
+            video.addEventListener('loadeddata', onLoaded);
+            video.addEventListener('error', onError);
+            video.load();
+          });
+          videoElementsMap.set(clip.id, video);
+        } else if (clip.type === 'image' && clip.src && !imageElementsMap.has(clip.id)) {
           const img = new Image();
-          img.src = clip.src;
           img.crossOrigin = 'anonymous';
-          await new Promise((res) => {
-            if (img.complete) res(null);
-            else img.onload = img.onerror = () => res(null);
+          img.src = clip.src;
+          await new Promise<void>((resolve) => {
+            if (img.complete) resolve();
+            else {
+              img.onload = () => resolve();
+              img.onerror = () => resolve();
+            }
           });
           imageElementsMap.set(clip.id, img);
-        } else if (clip.type === 'video' && clip.src) {
-          const vid = document.createElement('video');
-          vid.src = clip.src;
-          vid.crossOrigin = 'anonymous';
-          vid.muted = true;
-          await new Promise((res) => {
-            vid.onloadeddata = () => res(null);
-            vid.onerror = () => res(null);
-          });
-          videoElementsMap.set(clip.id, vid);
         }
       }
     }
 
-    // Helper: Draw single clip with Aspect Ratio Preservation (Contain / Cover)
-    const drawSingleClip = async (clip: Clip, time: number) => {
+    const drawClip = async (clip: Clip, time: number) => {
       const relTime = time - clip.startTime;
       const currentTransform = getInterpolatedTransform(clip, relTime);
 
       ctx.save();
 
-      // Masking Path
-      if (clip.mask && clip.mask.type !== 'none') {
-        ctx.beginPath();
-        if (clip.mask.type === 'circle') {
-          ctx.arc(width / 2, height / 2, Math.min(width, height) / 3, 0, Math.PI * 2);
-        } else if (clip.mask.type === 'rectangle') {
-          ctx.rect(width * 0.15, height * 0.15, width * 0.7, height * 0.7);
-        } else if (clip.mask.type === 'splitLeft') {
-          ctx.rect(0, 0, width / 2, height);
-        } else if (clip.mask.type === 'pen' && clip.mask.points && clip.mask.points.length > 0) {
-          clip.mask.points.forEach((pt, i) => {
-            const px = width / 2 + (pt.x / 100) * width;
-            const py = height / 2 + (pt.y / 100) * height;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
-          });
-          ctx.closePath();
-        }
-        ctx.clip();
-      }
-
-      // Center transform
       const centerX = width / 2 + (currentTransform.x / 100) * width;
       const centerY = height / 2 + (currentTransform.y / 100) * height;
       ctx.translate(centerX, centerY);
       ctx.rotate((currentTransform.rotation * Math.PI) / 180);
-      ctx.scale(currentTransform.scale, currentTransform.scale);
+
+      const flipX = currentTransform.flipHorizontal ? -1 : 1;
+      const flipY = currentTransform.flipVertical ? -1 : 1;
+      ctx.scale(currentTransform.scale * flipX, currentTransform.scale * flipY);
+
       ctx.globalAlpha = Math.max(0, Math.min(1, currentTransform.opacity));
 
-      // Filter
       const f = clip.filter;
-      ctx.filter = `brightness(${f.brightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${f.hueRotate}deg) sepia(${f.sepia}%)`;
+      const expBrightness = f.brightness + (f.exposure || 0);
+      const tempHue = f.hueRotate + (f.temperature || 0);
+      ctx.filter = `brightness(${expBrightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${tempHue}deg) sepia(${f.sepia}%)`;
+
+      const cropTop = (currentTransform.cropTop || 0) / 100;
+      const cropBottom = (currentTransform.cropBottom || 0) / 100;
+      const cropLeft = (currentTransform.cropLeft || 0) / 100;
+      const cropRight = (currentTransform.cropRight || 0) / 100;
 
       if (clip.type === 'image') {
         const img = imageElementsMap.get(clip.id);
         if (img) {
-          const aspect = (img.naturalWidth || width) / (img.naturalHeight || height);
+          const natW = img.naturalWidth || width;
+          const natH = img.naturalHeight || height;
+          const sx = natW * cropLeft;
+          const sy = natH * cropTop;
+          const sw = natW * (1 - cropLeft - cropRight);
+          const sh = natH * (1 - cropTop - cropBottom);
+
+          const aspect = sw / sh;
           let drawW = width;
           let drawH = width / aspect;
           if (drawH < height) {
             drawH = height;
             drawW = height * aspect;
           }
-          ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+          ctx.drawImage(img, sx, sy, sw, sh, -drawW / 2, -drawH / 2, drawW, drawH);
         }
       } else if (clip.type === 'video') {
         const vid = videoElementsMap.get(clip.id);
         if (vid) {
           const mediaTime = getSourceTimeForTimelineTime(clip, time);
           await seekVideoFrame(vid, mediaTime);
-          const aspect = (vid.videoWidth || width) / (vid.videoHeight || height);
+          const natW = vid.videoWidth || width;
+          const natH = vid.videoHeight || height;
+          const sx = natW * cropLeft;
+          const sy = natH * cropTop;
+          const sw = natW * (1 - cropLeft - cropRight);
+          const sh = natH * (1 - cropTop - cropBottom);
+
+          const aspect = sw / sh;
           let drawW = width;
           let drawH = width / aspect;
           if (drawH < height) {
             drawH = height;
             drawW = height * aspect;
           }
-          ctx.drawImage(vid, -drawW / 2, -drawH / 2, drawW, drawH);
+          ctx.drawImage(vid, sx, sy, sw, sh, -drawW / 2, -drawH / 2, drawW, drawH);
         }
       } else if (clip.type === 'text' && clip.text) {
         const text = clip.text;
@@ -334,7 +332,6 @@ export async function exportVideoProject(
       ctx.restore();
     };
 
-    // 3. TRUE PROGRESSIVE CHUNKED FRAME RENDERING (CHUNK_SIZE = 60 frames = 2 seconds)
     const CHUNK_SIZE = 60;
 
     for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
@@ -353,163 +350,158 @@ export async function exportVideoProject(
         });
       });
 
-      // Group clips by transition range with SAME-TRACK outgoing clip resolution
-      for (let i = 0; i < visibleClips.length; i++) {
-        const clip = visibleClips[i];
+      for (const clip of visibleClips) {
         const relTime = time - clip.startTime;
         const hasTransition = clip.transition && clip.transition.type !== 'none';
 
         if (hasTransition && relTime < (clip.transition?.duration || 0.5)) {
-          // SAME-TRACK Outgoing Clip Resolution
           const outgoingClip = findPreviousClipOnSameTrack(tracks, clip);
           const transDur = clip.transition?.duration || 0.5;
           const transProgress = relTime / transDur;
 
-          renderTransitionEffect({
+          await renderTransitionEffect({
             type: clip.transition!.type,
             progress: transProgress,
             ctx,
             width,
             height,
-            drawOutgoing: () => {
-              if (outgoingClip) {
-                drawSingleClip(outgoingClip, time);
-              }
+            drawOutgoing: async () => {
+              if (outgoingClip) await drawClip(outgoingClip, time);
             },
-            drawIncoming: () => {
-              drawSingleClip(clip, time);
-            },
+            drawIncoming: async () => await drawClip(clip, time),
             frameSeed: frameIdx,
           });
         } else {
-          await drawSingleClip(clip, time);
+          await drawClip(clip, time);
         }
       }
 
-      // Write frame PNG to FFmpeg virtual FS
-      const frameBlob: Blob = await new Promise((res) => exportCanvas.toBlob((b) => res(b!), 'image/png'));
-      const frameData = await fetchFile(frameBlob);
-      const frameName = `frame_${frameIdx.toString().padStart(4, '0')}.png`;
-      await ffmpeg.writeFile(frameName, frameData);
+      const frameData = ctx.getImageData(0, 0, width, height);
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+      const tempCtx = tempCanvas.getContext('2d')!;
+      tempCtx.putImageData(frameData, 0, 0);
 
-      // Progressive memory cleanup: delete frame after chunk processing
-      if ((frameIdx + 1) % CHUNK_SIZE === 0 || frameIdx === totalFrames - 1) {
-        // Chunk boundary reached
+      const blob = await new Promise<Blob>((resolve) =>
+        tempCanvas.toBlob((b) => resolve(b!), 'image/png')
+      );
+
+      const frameNumStr = frameIdx.toString().padStart(5, '0');
+      const filename = `frame_${frameNumStr}.png`;
+      await ffmpeg.writeFile(filename, await fetchFile(blob));
+
+      if (onProgress && frameIdx % 10 === 0) {
+        const renderPercent = Math.round((frameIdx / totalFrames) * 45);
+        onProgress(renderPercent);
       }
 
-      if (onProgress) {
-        onProgress(Math.round((frameIdx / totalFrames) * 60));
+      if (frameIdx % CHUNK_SIZE === 0 && frameIdx > 0) {
+        await new Promise((r) => setTimeout(r, 10));
       }
     }
 
-    // 4. Audio Mixing using Shared getSourceTimeForTimelineTime Math with Strict Error Throwing
-    const audioTrackClips: Clip[] = [];
-    tracks.forEach((t) => {
-      if (!t.muted) {
-        t.clips.forEach((c) => {
-          if ((c.type === 'audio' || c.type === 'video') && c.src && !c.audio.muted) {
-            audioTrackClips.push(c);
+    const sampleRate = 44100;
+    const offlineCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
+      2,
+      Math.ceil(duration * sampleRate),
+      sampleRate
+    );
+
+    let hasAudioClips = false;
+
+    for (const track of tracks) {
+      if (track.muted) continue;
+
+      for (const clip of track.clips) {
+        if ((clip.type === 'video' || clip.type === 'audio') && clip.src && !clip.audio.muted) {
+          try {
+            const resp = await fetch(clip.src);
+            const arrayBuf = await resp.arrayBuffer();
+            const decodedBuf = await offlineCtx.decodeAudioData(arrayBuf);
+
+            const source = offlineCtx.createBufferSource();
+            source.buffer = decodedBuf;
+
+            const gainNode = offlineCtx.createGain();
+            const vol = clip.audio.volume ?? 1;
+            gainNode.gain.setValueAtTime(vol, clip.startTime);
+
+            if (clip.audio.fadeIn > 0) {
+              gainNode.gain.setValueAtTime(0, clip.startTime);
+              gainNode.gain.linearRampToValueAtTime(vol, clip.startTime + clip.audio.fadeIn);
+            }
+
+            if (clip.audio.fadeOut > 0) {
+              const fadeOutStart = clip.startTime + clip.duration - clip.audio.fadeOut;
+              gainNode.gain.setValueAtTime(vol, fadeOutStart);
+              gainNode.gain.linearRampToValueAtTime(0, clip.startTime + clip.duration);
+            }
+
+            source.connect(gainNode);
+            gainNode.connect(offlineCtx.destination);
+
+            source.start(clip.startTime, clip.mediaOffset, clip.duration);
+            hasAudioClips = true;
+          } catch (e) {
+            console.warn(`Audio decoding warning for clip ${clip.name}:`, e);
           }
-        });
-      }
-    });
-
-    if (audioTrackClips.length > 0) {
-      try {
-        const sampleRate = 44100;
-        const offlineAudioCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(
-          2,
-          Math.max(1, Math.ceil(duration * sampleRate)),
-          sampleRate
-        );
-
-        for (const clip of audioTrackClips) {
-          const resp = await fetch(clip.src);
-          if (!resp.ok) {
-            throw new Error(`Failed to fetch audio source: ${clip.name} (HTTP ${resp.status})`);
-          }
-          const buf = await resp.arrayBuffer();
-          const decodedAudio = await offlineAudioCtx.decodeAudioData(buf);
-
-          const sourceNode = offlineAudioCtx.createBufferSource();
-          sourceNode.buffer = decodedAudio;
-          sourceNode.playbackRate.value = clip.speed || 1;
-
-          const gainNode = offlineAudioCtx.createGain();
-          gainNode.gain.value = Math.max(0, Math.min(2, clip.audio.volume));
-
-          sourceNode.connect(gainNode);
-          gainNode.connect(offlineAudioCtx.destination);
-
-          const startOffset = Math.max(0, clip.startTime);
-          const sourceOffset = clip.mediaOffset || 0;
-          const playDuration = Math.min(clip.duration, (decodedAudio.duration - sourceOffset) / clip.speed);
-
-          sourceNode.start(startOffset, sourceOffset, playDuration);
         }
-
-        const renderedAudioBuffer = await offlineAudioCtx.startRendering();
-        const wavBytes = audioBufferToWav(renderedAudioBuffer);
-        await ffmpeg.writeFile('audio_mix.wav', wavBytes);
-        hasAudioInput = true;
-      } catch (audioErr: any) {
-        // STRICT REQUIREMENT: DO NOT SILENTLY DROP AUDIO - THROW EXPLICIT ERROR
-        throw new Error(`Audio Export Error: Failed to mix audio track: ${audioErr.message || audioErr}`);
       }
     }
 
-    // 5. Execute FFmpeg Encoding Command
-    const ffmpegArgs = ['-framerate', `${fps}`, '-i', 'frame_%04d.png'];
-    if (hasAudioInput) ffmpegArgs.push('-i', 'audio_mix.wav');
-
-    ffmpegArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast');
-    if (hasAudioInput) ffmpegArgs.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
-    ffmpegArgs.push('output.mp4');
-
-    await ffmpeg.exec(ffmpegArgs);
-
-    // 6. Strict MP4 File Container & Signature Validation
-    const outputData = (await ffmpeg.readFile('output.mp4')) as Uint8Array;
-    if (!outputData || outputData.length < 100) {
-      throw new Error('Export Validation Failed: Encoded MP4 file is 0 bytes or corrupted.');
+    if (hasAudioClips) {
+      const renderedAudioBuffer = await offlineCtx.startRendering();
+      const wavArrayBuffer = audioBufferToWav(renderedAudioBuffer);
+      await ffmpeg.writeFile('audio.wav', new Uint8Array(wavArrayBuffer));
     }
 
-    // Validate MP4 'ftyp' box header signature (bytes 4..7)
-    const headerString = String.fromCharCode(...outputData.slice(4, 8));
-    if (headerString !== 'ftyp') {
-      throw new Error('Export Validation Failed: Generated output does not contain a valid MP4 container header.');
+    if (onProgress) onProgress(50);
+
+    const inputArgs = ['-framerate', fps.toString(), '-i', 'frame_%05d.png'];
+    if (hasAudioClips) {
+      inputArgs.push('-i', 'audio.wav');
     }
 
-    const mp4Blob = new Blob([new Uint8Array(outputData)], { type: 'video/mp4' });
+    const outputArgs = [
+      ...inputArgs,
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      '-preset',
+      'fast',
+      '-crf',
+      settings.quality === 'high' ? '18' : '23',
+    ];
 
-    if (onProgress) {
-      onProgress(100);
+    if (hasAudioClips) {
+      outputArgs.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
     }
 
-    return mp4Blob;
-  } finally {
-    // 7. Cleanup Progressive PNG Frames
-    for (let i = 0; i < totalFrames; i++) {
-      const frameName = `frame_${i.toString().padStart(4, '0')}.png`;
-      try {
-        await ffmpeg.deleteFile(frameName);
-      } catch (e) {}
-    }
+    outputArgs.push('output.mp4');
 
-    if (hasAudioInput) {
-      try {
-        await ffmpeg.deleteFile('audio_mix.wav');
-      } catch (e) {}
-    }
+    await ffmpeg.exec(outputArgs);
 
-    try {
-      await ffmpeg.deleteFile('output.mp4');
-    } catch (e) {}
+    if (onProgress) onProgress(90);
 
-    // Cleanup Progress Listener
-    if (currentProgressListener) {
-      ffmpeg.off('progress', currentProgressListener);
-      currentProgressListener = null;
+    const data = await ffmpeg.readFile('output.mp4');
+
+    for (let frameIdx = 0; frameIdx < totalFrames; frameIdx++) {
+      const filename = `frame_${frameIdx.toString().padStart(5, '0')}.png`;
+      await ffmpeg.deleteFile(filename).catch(() => {});
     }
+    if (hasAudioClips) {
+      await ffmpeg.deleteFile('audio.wav').catch(() => {});
+    }
+    await ffmpeg.deleteFile('output.mp4').catch(() => {});
+
+    if (onProgress) onProgress(100);
+
+    const u8 = data as Uint8Array;
+    return new Blob([u8.buffer as ArrayBuffer], { type: 'video/mp4' });
+  } catch (err: any) {
+    console.error('Export Error:', err);
+    throw err;
   }
 }

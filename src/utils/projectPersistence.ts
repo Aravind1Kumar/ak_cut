@@ -36,28 +36,17 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-// Track and Create Object URL
 export function createManagedObjectURL(blob: Blob): string {
   const url = URL.createObjectURL(blob);
   activeObjectURLs.add(url);
   return url;
 }
 
-// Revoke managed Object URL
-export function revokeManagedObjectURL(url: string): void {
-  if (url && activeObjectURLs.has(url)) {
-    URL.revokeObjectURL(url);
-    activeObjectURLs.delete(url);
-  }
-}
-
-// Revoke all managed Object URLs
 export function revokeAllManagedObjectURLs(): void {
   activeObjectURLs.forEach((url) => URL.revokeObjectURL(url));
   activeObjectURLs.clear();
 }
 
-// Store Media Blob in IndexedDB media_assets store - STRICT ERROR THROW
 export async function saveMediaAssetBlob(asset: PersistentMediaAsset): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -65,41 +54,38 @@ export async function saveMediaAssetBlob(asset: PersistentMediaAsset): Promise<v
     const store = tx.objectStore(STORE_MEDIA);
     const req = store.put(asset);
     req.onsuccess = () => resolve();
-    req.onerror = () => reject(new Error(`Failed to store media asset "${asset.name}" in IndexedDB: ${req.error?.message || 'IndexedDB Write Error'}`));
-    tx.onerror = () => reject(new Error(`Transaction failed for media asset "${asset.name}": ${tx.error?.message || 'IndexedDB Transaction Error'}`));
+    req.onerror = () => reject(new Error(`Failed to store media blob in IndexedDB: ${req.error?.message || 'IndexedDB Error'}`));
+    tx.onerror = () => reject(new Error(`Media blob transaction failed: ${tx.error?.message || 'IndexedDB Error'}`));
   });
 }
 
-// Delete Media Blob from IndexedDB media_assets store (Priority 3)
-export async function deleteMediaAssetBlob(assetId: string): Promise<void> {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_MEDIA, 'readwrite');
-    const store = tx.objectStore(STORE_MEDIA);
-    store.delete(assetId);
-  } catch (e) {
-    console.error(`Failed to delete media asset ${assetId} from IndexedDB:`, e);
-  }
-}
-
-// Retrieve Media Blob from IndexedDB
-export async function getMediaAssetBlob(assetId: string): Promise<PersistentMediaAsset | null> {
+export async function getMediaAssetBlob(id: string): Promise<PersistentMediaAsset | null> {
   try {
     const db = await openDB();
     const tx = db.transaction(STORE_MEDIA, 'readonly');
     const store = tx.objectStore(STORE_MEDIA);
-    const request = store.get(assetId);
+    const request = store.get(id);
     return new Promise((resolve, reject) => {
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error);
     });
   } catch (e) {
-    console.error('Failed to retrieve media asset from IndexedDB:', e);
+    console.error(`Failed to load media asset ${id} from IndexedDB:`, e);
     return null;
   }
 }
 
-// Save Project State - STRICT ERROR THROW
+export async function deleteMediaAssetBlob(id: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_MEDIA, 'readwrite');
+    const store = tx.objectStore(STORE_MEDIA);
+    const request = store.delete(id);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+
 export async function saveProjectStateToIndexedDB(projectData: any): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
@@ -112,7 +98,6 @@ export async function saveProjectStateToIndexedDB(projectData: any): Promise<voi
   });
 }
 
-// Load Project State
 export async function loadProjectStateFromIndexedDB(): Promise<any | null> {
   try {
     const db = await openDB();
@@ -129,7 +114,9 @@ export async function loadProjectStateFromIndexedDB(): Promise<any | null> {
   }
 }
 
-// Rebuild runtime Object URLs from IndexedDB Media Store
+export const saveProject = saveProjectStateToIndexedDB;
+export const loadProject = loadProjectStateFromIndexedDB;
+
 export async function restoreProjectWithMediaBlobs(projectState: any): Promise<{
   tracks: any[];
   mediaAssets: any[];
