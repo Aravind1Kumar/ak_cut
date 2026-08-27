@@ -36,5 +36,5 @@ export async function extractAudioFromClip(clip: Clip): Promise<Blob> {
   const renderedBuffer = await offlineCtx.startRendering();
   const wavArrayBuffer = audioBufferToWav(renderedBuffer);
 
-  return new Blob([wavArrayBuffer], { type: 'audio/wav' });
+  return new Blob([wavArrayBuffer.buffer as ArrayBuffer], { type: 'audio/wav' });
 }
