@@ -23,10 +23,13 @@ import {
   Grid,
   Zap,
   Bookmark,
+  Gauge,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { BlendMode, CaptionStyle, FilterProps, KeyframeEasing } from '../types/timeline';
+import { BlendMode, CaptionStyle, FilterProps, KeyframeEasing, SpeedCurveType } from '../types/timeline';
 import { DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
+import { normalizeClipAudioGain } from '../utils/audioNormalizeEngine';
+import { SPEED_CURVE_PRESETS } from '../utils/speedEngine';
 
 let copiedFilterProps: FilterProps | null = null;
 let copiedCaptionStyle: CaptionStyle | null = null;
@@ -34,6 +37,7 @@ let copiedCaptionStyle: CaptionStyle | null = null;
 export const Inspector: React.FC = () => {
   const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({
     keyframes: true,
+    speed: true,
     transform: true,
     filter: true,
     effects: true,
@@ -56,6 +60,7 @@ export const Inspector: React.FC = () => {
     updateClipText,
     updateClipCaption,
     updateClipChromaKey,
+    updateClipSpeedCurve,
     updateClip,
     detachAudioFromSelectedClip,
     freezeFrameSelectedClip,
@@ -88,67 +93,17 @@ export const Inspector: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-gray-500">
           <Sliders className="w-12 h-12 text-gray-600 mb-3 stroke-1" />
           <h3 className="text-sm font-bold text-gray-300 mb-1">No Clip Selected</h3>
-          <p className="text-xs text-gray-500">Click a clip on the timeline to edit properties, keyframes, transforms, or filters.</p>
+          <p className="text-xs text-gray-500">Click a clip on the timeline to edit properties, keyframes, transforms, or speed curves.</p>
         </div>
       </aside>
     );
   }
 
-  const handleCopyCaptionStyle = () => {
-    if (!selectedClip || selectedClip.type !== 'caption') return;
-    const currentStyle = selectedClip.caption?.customStyle || DEFAULT_CAPTION_STYLES[selectedClip.caption?.stylePreset || 'social'];
-    copiedCaptionStyle = { ...currentStyle };
-  };
-
-  const handlePasteCaptionStyle = () => {
-    if (!selectedClip || selectedClip.type !== 'caption' || !copiedCaptionStyle) return;
-    beginTransaction();
-    updateClipCaption(selectedClip.id, {
-      customStyle: { ...copiedCaptionStyle },
-    });
-    commitTransaction();
-  };
-
-  const handleCopyEffects = () => {
+  const handleNormalizeAudio = async () => {
     if (!selectedClip) return;
-    copiedFilterProps = { ...selectedClip.filter };
-  };
-
-  const handlePasteEffects = () => {
-    if (!selectedClip || !copiedFilterProps) return;
+    const normVolume = await normalizeClipAudioGain(selectedClip);
     beginTransaction();
-    updateClipFilter(selectedClip.id, { ...copiedFilterProps });
-    commitTransaction();
-  };
-
-  const handleApplyFilterPreset = (presetKey: string) => {
-    if (!selectedClip) return;
-    beginTransaction();
-    updateClipFilter(selectedClip.id, {
-      presetKey,
-      presetIntensity: selectedClip.filter.presetIntensity ?? 100,
-    });
-    commitTransaction();
-  };
-
-  const handleFreezeFrame = () => {
-    if (!selectedClip || selectedClip.type !== 'video') return;
-
-    const previewCanvas = document.querySelector('canvas') as HTMLCanvasElement;
-    if (!previewCanvas) return;
-
-    const dataUrl = previewCanvas.toDataURL('image/png');
-    freezeFrameSelectedClip(dataUrl);
-  };
-
-  const handleApplyPipPreset = (position: 'br' | 'bl' | 'tr' | 'tl' | 'center') => {
-    if (!selectedClip) return;
-    beginTransaction();
-    if (position === 'br') updateClipTransform(selectedClip.id, { x: 30, y: 30, scale: 0.35 });
-    else if (position === 'bl') updateClipTransform(selectedClip.id, { x: -30, y: 30, scale: 0.35 });
-    else if (position === 'tr') updateClipTransform(selectedClip.id, { x: 30, y: -30, scale: 0.35 });
-    else if (position === 'tl') updateClipTransform(selectedClip.id, { x: -30, y: -30, scale: 0.35 });
-    else updateClipTransform(selectedClip.id, { x: 0, y: 0, scale: 1.0 });
+    updateClipAudio(selectedClip.id, { volume: normVolume });
     commitTransaction();
   };
 
@@ -204,6 +159,56 @@ export const Inspector: React.FC = () => {
             <FolderMinus className="w-3.5 h-3.5" />
             <span>Ungroup</span>
           </button>
+        </div>
+      )}
+
+      {/* SPEED & RAMPING SECTION */}
+      {(selectedClip.type === 'video' || selectedClip.type === 'audio') && (
+        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+          <button
+            onClick={() => toggleSection('speed')}
+            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+          >
+            <span className="flex items-center space-x-1.5">
+              <Gauge className="w-4 h-4 text-cyan-400" />
+              <span>Speed & Speed Curves</span>
+            </span>
+            {openSections.speed ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {openSections.speed && (
+            <div className="p-3 space-y-3">
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">Speed Curve Preset</span>
+                <select
+                  value={selectedClip.speedCurve || 'flat'}
+                  onChange={(e) => updateClipSpeedCurve(selectedClip!.id, e.target.value as SpeedCurveType)}
+                  className="w-full bg-dark-800 border border-dark-700 rounded p-1.5 text-xs text-white outline-none focus:border-cyan-500"
+                >
+                  {Object.entries(SPEED_CURVE_PRESETS).map(([key, val]) => (
+                    <option key={key} value={key}>
+                      {val.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Playback Speed Multiplier ({selectedClip.speed}x)
+                </span>
+                <input
+                  type="range"
+                  min="0.25"
+                  max="4.0"
+                  step="0.25"
+                  value={selectedClip.speed}
+                  onChange={(e) => updateClip(selectedClip!.id, { speed: parseFloat(e.target.value) })}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -366,6 +371,14 @@ export const Inspector: React.FC = () => {
 
           {openSections.audio && (
             <div className="p-3 space-y-3">
+              <button
+                onClick={handleNormalizeAudio}
+                className="w-full py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/40 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-1.5"
+              >
+                <Volume2 className="w-3.5 h-3.5" />
+                <span>Normalize Audio Gain (0 dBFS)</span>
+              </button>
+
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-semibold text-gray-400">
