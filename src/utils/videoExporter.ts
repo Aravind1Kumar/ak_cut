@@ -4,6 +4,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import { Clip } from '../types/timeline';
 import { renderTransitionEffect, findPreviousClipOnSameTrack } from './transitionEngine';
 import { renderCaption, DEFAULT_CAPTION_STYLES } from './captionEngine';
+import { buildCSSFilterString, renderPostProcessingEffects } from './filterEngine';
 import { audioBufferToWav } from './audioWavEncoder';
 import { getSourceTimeForTimelineTime } from './timelineMath';
 
@@ -251,10 +252,7 @@ export async function exportVideoProject(
       };
       ctx.globalCompositeOperation = blendMap[currentTransform.blendMode || 'normal'] || 'source-over';
 
-      const f = clip.filter;
-      const expBrightness = Math.max(0, f.brightness + (f.exposure || 0));
-      const tempHue = f.hueRotate + (f.temperature || 0) * 0.5 + (f.tint || 0) * 0.5;
-      ctx.filter = `brightness(${expBrightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${tempHue}deg) sepia(${f.sepia}%)`;
+      ctx.filter = buildCSSFilterString(clip.filter);
 
       const rawCropTop = (currentTransform.cropTop || 0) / 100;
       const rawCropBottom = (currentTransform.cropBottom || 0) / 100;
@@ -344,6 +342,8 @@ export async function exportVideoProject(
         };
         renderCaption(ctx, segment, time, style, width, height);
       }
+
+      renderPostProcessingEffects(ctx, clip.filter, width, height);
 
       ctx.restore();
     };

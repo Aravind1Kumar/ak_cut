@@ -19,18 +19,23 @@ import {
   Sun,
   Thermometer,
   Layers,
+  Palette,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
-import { CaptionStyle, BlendMode } from '../types/timeline';
+import { FILTER_PRESETS } from '../utils/filterEngine';
+import { CaptionStyle, BlendMode, FilterProps } from '../types/timeline';
 
 let copiedCaptionStyle: CaptionStyle | null = null;
+let copiedFilterProps: FilterProps | null = null;
 
 export const Inspector: React.FC = () => {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     captionPreset: true,
     transform: true,
+    presetFilter: true,
     filter: true,
+    videoEffects: true,
     text: true,
     audio: true,
   });
@@ -76,7 +81,7 @@ export const Inspector: React.FC = () => {
     );
   }
 
-  const handleApplyPreset = (presetKey: string) => {
+  const handleApplyCaptionPreset = (presetKey: string) => {
     if (!selectedClip || selectedClip.type !== 'caption') return;
     const preset = DEFAULT_CAPTION_STYLES[presetKey] || DEFAULT_CAPTION_STYLES.social;
 
@@ -88,17 +93,39 @@ export const Inspector: React.FC = () => {
     commitTransaction();
   };
 
-  const handleCopyStyle = () => {
+  const handleCopyCaptionStyle = () => {
     if (!selectedClip || selectedClip.type !== 'caption') return;
     const currentStyle = selectedClip.caption?.customStyle || DEFAULT_CAPTION_STYLES[selectedClip.caption?.stylePreset || 'social'];
     copiedCaptionStyle = { ...currentStyle };
   };
 
-  const handlePasteStyle = () => {
+  const handlePasteCaptionStyle = () => {
     if (!selectedClip || selectedClip.type !== 'caption' || !copiedCaptionStyle) return;
     beginTransaction();
     updateClipCaption(selectedClip.id, {
       customStyle: { ...copiedCaptionStyle },
+    });
+    commitTransaction();
+  };
+
+  const handleCopyEffects = () => {
+    if (!selectedClip) return;
+    copiedFilterProps = { ...selectedClip.filter };
+  };
+
+  const handlePasteEffects = () => {
+    if (!selectedClip || !copiedFilterProps) return;
+    beginTransaction();
+    updateClipFilter(selectedClip.id, { ...copiedFilterProps });
+    commitTransaction();
+  };
+
+  const handleApplyFilterPreset = (presetKey: string) => {
+    if (!selectedClip) return;
+    beginTransaction();
+    updateClipFilter(selectedClip.id, {
+      presetKey,
+      presetIntensity: selectedClip.filter.presetIntensity ?? 100,
     });
     commitTransaction();
   };
@@ -131,7 +158,7 @@ export const Inspector: React.FC = () => {
     else if (prop === 'rotation') updateClipTransform(selectedClip!.id, { rotation: 0 });
     else if (prop === 'opacity') updateClipTransform(selectedClip!.id, { opacity: 1.0 });
     else if (prop === 'volume') updateClipAudio(selectedClip!.id, { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false });
-    else if (prop === 'filter') updateClipFilter(selectedClip!.id, { brightness: 100, contrast: 100, saturation: 100, blur: 0, hueRotate: 0, sepia: 0, exposure: 0, temperature: 0, tint: 0 });
+    else if (prop === 'filter') updateClipFilter(selectedClip!.id, { brightness: 100, contrast: 100, saturation: 100, blur: 0, hueRotate: 0, sepia: 0, exposure: 0, temperature: 0, tint: 0, fade: 0, vignette: 0, glow: 0, colorShift: 0, presetKey: 'original', presetIntensity: 100 });
     commitTransaction();
   };
 
@@ -147,6 +174,26 @@ export const Inspector: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-1.5">
+          {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={handleCopyEffects}
+                className="px-2 py-1 bg-dark-700 hover:bg-dark-600 text-gray-200 border border-dark-600 rounded-lg text-xs font-semibold transition"
+                title="Copy Filter & Effects"
+              >
+                <Copy className="w-3 h-3" />
+              </button>
+              <button
+                onClick={handlePasteEffects}
+                disabled={!copiedFilterProps}
+                className="px-2 py-1 bg-dark-700 hover:bg-dark-600 text-gray-200 disabled:opacity-30 border border-dark-600 rounded-lg text-xs font-semibold transition"
+                title="Paste Filter & Effects"
+              >
+                <Clipboard className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           {selectedClip.type === 'video' && (
             <button
               onClick={handleFreezeFrame}
@@ -180,7 +227,7 @@ export const Inspector: React.FC = () => {
 
             <div className="flex items-center space-x-1">
               <button
-                onClick={handleCopyStyle}
+                onClick={handleCopyCaptionStyle}
                 className="px-2 py-1 bg-dark-800 hover:bg-dark-700 text-gray-300 rounded text-[11px] font-semibold flex items-center space-x-1 border border-dark-700"
                 title="Copy Style"
               >
@@ -188,7 +235,7 @@ export const Inspector: React.FC = () => {
                 <span>Copy</span>
               </button>
               <button
-                onClick={handlePasteStyle}
+                onClick={handlePasteCaptionStyle}
                 disabled={!copiedCaptionStyle}
                 className="px-2 py-1 bg-dark-800 hover:bg-dark-700 text-gray-300 disabled:opacity-30 rounded text-[11px] font-semibold flex items-center space-x-1 border border-dark-700"
                 title="Paste Style"
@@ -211,7 +258,7 @@ export const Inspector: React.FC = () => {
             {Object.entries(DEFAULT_CAPTION_STYLES).map(([key, style]) => (
               <button
                 key={key}
-                onClick={() => handleApplyPreset(key)}
+                onClick={() => handleApplyCaptionPreset(key)}
                 className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition text-left ${
                   selectedClip.caption?.stylePreset === key
                     ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md'
@@ -222,6 +269,58 @@ export const Inspector: React.FC = () => {
               </button>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* FILTER PRESETS SECTION */}
+      {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+          <button
+            onClick={() => toggleSection('presetFilter')}
+            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+          >
+            <span className="flex items-center space-x-1.5">
+              <Palette className="w-4 h-4 text-cyan-400" />
+              <span>Creator Filter Presets</span>
+            </span>
+            {openSections.presetFilter ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {openSections.presetFilter && (
+            <div className="p-3 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                {Object.entries(FILTER_PRESETS).map(([key, preset]) => (
+                  <button
+                    key={key}
+                    onClick={() => handleApplyFilterPreset(key)}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition text-left ${
+                      (selectedClip.filter.presetKey || 'original') === key
+                        ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50 shadow-md'
+                        : 'bg-dark-900/60 text-gray-400 border-dark-700 hover:text-white'
+                    }`}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold text-gray-400">
+                    Preset Intensity ({selectedClip.filter.presetIntensity ?? 100}%)
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={selectedClip.filter.presetIntensity ?? 100}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { presetIntensity: parseInt(e.target.value, 10) })}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -325,162 +424,85 @@ export const Inspector: React.FC = () => {
                 className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
               />
             </div>
-
-            {/* Flip Orientation */}
-            <div className="flex items-center justify-between pt-2 border-t border-dark-700/60">
-              <span className="text-xs font-semibold text-gray-300">Flip Orientation</span>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() =>
-                    updateClipTransform(selectedClip!.id, {
-                      flipHorizontal: !selectedClip!.transform.flipHorizontal,
-                    })
-                  }
-                  className={`p-2 rounded-lg border text-xs font-bold transition ${
-                    selectedClip.transform.flipHorizontal
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                      : 'bg-dark-800 text-gray-400 border-dark-700 hover:text-white'
-                  }`}
-                  title="Flip Horizontal"
-                >
-                  <FlipHorizontal className="w-4 h-4" />
-                </button>
-
-                <button
-                  onClick={() =>
-                    updateClipTransform(selectedClip!.id, {
-                      flipVertical: !selectedClip!.transform.flipVertical,
-                    })
-                  }
-                  className={`p-2 rounded-lg border text-xs font-bold transition ${
-                    selectedClip.transform.flipVertical
-                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
-                      : 'bg-dark-800 text-gray-400 border-dark-700 hover:text-white'
-                  }`}
-                  title="Flip Vertical"
-                >
-                  <FlipVertical className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Position X / Y */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-semibold text-gray-400">Position X / Y (%)</span>
-                <button
-                  onClick={() => resetProperty('position')}
-                  className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5"
-                >
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  value={Math.round(selectedClip.transform.x)}
-                  onChange={(e) => updateClipTransform(selectedClip!.id, { x: parseFloat(e.target.value) || 0 })}
-                  className="bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white text-center outline-none focus:border-cyan-500"
-                />
-                <input
-                  type="number"
-                  value={Math.round(selectedClip.transform.y)}
-                  onChange={(e) => updateClipTransform(selectedClip!.id, { y: parseFloat(e.target.value) || 0 })}
-                  className="bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white text-center outline-none focus:border-cyan-500"
-                />
-              </div>
-            </div>
-
-            {/* Scale */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-semibold text-gray-400">Scale ({Math.round(selectedClip.transform.scale * 100)}%)</span>
-                <button
-                  onClick={() => resetProperty('scale')}
-                  className="text-[10px] text-gray-500 hover:text-cyan-400 flex items-center space-x-0.5"
-                >
-                  <RotateCcw className="w-2.5 h-2.5" />
-                  <span>Reset</span>
-                </button>
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="range"
-                  min="0.1"
-                  max="3.0"
-                  step="0.05"
-                  value={selectedClip.transform.scale}
-                  onChange={(e) => updateClipTransform(selectedClip!.id, { scale: parseFloat(e.target.value) })}
-                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                />
-                <input
-                  type="number"
-                  step="0.1"
-                  value={selectedClip.transform.scale}
-                  onChange={(e) => updateClipTransform(selectedClip!.id, { scale: parseFloat(e.target.value) || 1 })}
-                  className="w-14 bg-dark-800 border border-dark-700 rounded p-1 text-xs text-white text-center outline-none focus:border-cyan-500"
-                />
-              </div>
-            </div>
-
-            {/* Video Crop Sliders */}
-            <div className="pt-2 border-t border-dark-700/60 space-y-2">
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Video Crop (%)</span>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <span className="text-[10px] text-gray-500 block">Top ({selectedClip.transform.cropTop || 0}%)</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="45"
-                    value={selectedClip.transform.cropTop || 0}
-                    onChange={(e) => updateClipTransform(selectedClip!.id, { cropTop: parseInt(e.target.value, 10) })}
-                    className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                  />
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-gray-500 block">Bottom ({selectedClip.transform.cropBottom || 0}%)</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="45"
-                    value={selectedClip.transform.cropBottom || 0}
-                    onChange={(e) => updateClipTransform(selectedClip!.id, { cropBottom: parseInt(e.target.value, 10) })}
-                    className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                  />
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-gray-500 block">Left ({selectedClip.transform.cropLeft || 0}%)</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="45"
-                    value={selectedClip.transform.cropLeft || 0}
-                    onChange={(e) => updateClipTransform(selectedClip!.id, { cropLeft: parseInt(e.target.value, 10) })}
-                    className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                  />
-                </div>
-
-                <div>
-                  <span className="text-[10px] text-gray-500 block">Right ({selectedClip.transform.cropRight || 0}%)</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="45"
-                    value={selectedClip.transform.cropRight || 0}
-                    onChange={(e) => updateClipTransform(selectedClip!.id, { cropRight: parseInt(e.target.value, 10) })}
-                    className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
-                  />
-                </div>
-              </div>
-            </div>
           </div>
         )}
       </div>
+
+      {/* VIDEO EFFECTS SECTION (Vignette, Glow, Blur, Color Shift) */}
+      {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+          <button
+            onClick={() => toggleSection('videoEffects')}
+            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+          >
+            <span className="flex items-center space-x-1.5">
+              <Wand2 className="w-4 h-4 text-purple-400" />
+              <span>Video Effects</span>
+            </span>
+            {openSections.videoEffects ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {openSections.videoEffects && (
+            <div className="p-3 space-y-3">
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Vignette ({selectedClip.filter.vignette || 0}%)
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={selectedClip.filter.vignette || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { vignette: parseInt(e.target.value, 10) })}
+                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Glow ({selectedClip.filter.glow || 0}%)
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={selectedClip.filter.glow || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { glow: parseInt(e.target.value, 10) })}
+                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Blur Effect ({selectedClip.filter.blur || 0}px)
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="50"
+                  value={selectedClip.filter.blur || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { blur: parseInt(e.target.value, 10) })}
+                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Color Shift ({selectedClip.filter.colorShift || 0}°)
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  value={selectedClip.filter.colorShift || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { colorShift: parseInt(e.target.value, 10) })}
+                  className="w-full accent-purple-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* COLOR & FILTERS SECTION */}
       {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
@@ -545,6 +567,20 @@ export const Inspector: React.FC = () => {
                   value={selectedClip.filter.tint || 0}
                   onChange={(e) => updateClipFilter(selectedClip!.id, { tint: parseInt(e.target.value, 10) })}
                   className="w-full accent-emerald-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Fade ({selectedClip.filter.fade || 0}%)
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={selectedClip.filter.fade || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { fade: parseInt(e.target.value, 10) })}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
                 />
               </div>
 

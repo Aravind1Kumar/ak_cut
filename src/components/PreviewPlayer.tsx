@@ -17,6 +17,7 @@ import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Keyframe } from '../types/timeline';
 import { renderTransitionEffect, findPreviousClipOnSameTrack } from '../utils/transitionEngine';
 import { renderCaption, DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
+import { buildCSSFilterString, renderPostProcessingEffects } from '../utils/filterEngine';
 import { getSourceTimeForTimelineTime } from '../utils/timelineMath';
 
 export const PreviewPlayer: React.FC = () => {
@@ -248,10 +249,7 @@ export const PreviewPlayer: React.FC = () => {
       };
       ctx.globalCompositeOperation = blendMap[currentTransform.blendMode || 'normal'] || 'source-over';
 
-      const f = clip.filter;
-      const expBrightness = Math.max(0, f.brightness + (f.exposure || 0));
-      const tempHue = f.hueRotate + (f.temperature || 0) * 0.5 + (f.tint || 0) * 0.5;
-      ctx.filter = `brightness(${expBrightness}%) contrast(${f.contrast}%) saturate(${f.saturation}%) blur(${f.blur}px) hue-rotate(${tempHue}deg) sepia(${f.sepia}%)`;
+      ctx.filter = buildCSSFilterString(clip.filter);
 
       const rawCropTop = (currentTransform.cropTop || 0) / 100;
       const rawCropBottom = (currentTransform.cropBottom || 0) / 100;
@@ -344,6 +342,8 @@ export const PreviewPlayer: React.FC = () => {
 
         renderCaption(ctx, segment, currentTime, style, width, height);
       }
+
+      renderPostProcessingEffects(ctx, clip.filter, width, height);
 
       ctx.restore();
     };

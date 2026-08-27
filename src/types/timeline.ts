@@ -29,6 +29,16 @@ export interface FilterProps {
   exposure?: number;   // -100 to +100
   temperature?: number; // -100 to +100 (cool to warm)
   tint?: number;       // -100 to +100 (green to magenta)
+  highlights?: number; // -100 to +100
+  shadows?: number;    // -100 to +100
+  fade?: number;       // 0 to 100%
+  sharpen?: number;    // 0 to 100%
+  vignette?: number;   // 0 to 100%
+  glow?: number;       // 0 to 100%
+  colorShift?: number; // 0 to 360 deg
+  presetKey?: string;  // e.g. 'warm', 'cool', 'cinematic'
+  presetIntensity?: number; // 0 to 100%
+  enabled?: boolean;
 }
 
 export interface AudioProps {
