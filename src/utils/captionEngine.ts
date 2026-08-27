@@ -13,7 +13,7 @@ export const DEFAULT_CAPTION_STYLES: Record<string, CaptionStyle> = {
     shadow: true,
     background: 'rgba(0, 0, 0, 0.75)',
     alignment: 'center',
-    highlightColor: '#00f2fe', // Bright Cyan
+    highlightColor: '#00f2fe',
   },
   bold: {
     id: 'bold',
@@ -27,7 +27,7 @@ export const DEFAULT_CAPTION_STYLES: Record<string, CaptionStyle> = {
     shadow: true,
     background: 'rgba(0, 0, 0, 0.85)',
     alignment: 'center',
-    highlightColor: '#ff0055', // Neon Red
+    highlightColor: '#ff0055',
   },
   impact: {
     id: 'impact',
@@ -41,7 +41,7 @@ export const DEFAULT_CAPTION_STYLES: Record<string, CaptionStyle> = {
     shadow: true,
     background: 'transparent',
     alignment: 'center',
-    highlightColor: '#ffea00', // Yellow
+    highlightColor: '#ffea00',
   },
   classic: {
     id: 'classic',
@@ -59,9 +59,6 @@ export const DEFAULT_CAPTION_STYLES: Record<string, CaptionStyle> = {
   },
 };
 
-/**
- * Validates and normalizes a CaptionSegment to prevent corrupt timing data.
- */
 export function validateCaptionSegment(segment: CaptionSegment): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -90,9 +87,6 @@ export function validateCaptionSegment(segment: CaptionSegment): { valid: boolea
   };
 }
 
-/**
- * Finds active caption segment at a specific timeline timestamp T.
- */
 export function getActiveCaptionSegment(segments: CaptionSegment[], timelineTime: number): CaptionSegment | null {
   for (const seg of segments) {
     if (timelineTime >= seg.startTime && timelineTime <= seg.endTime) {
@@ -102,10 +96,6 @@ export function getActiveCaptionSegment(segments: CaptionSegment[], timelineTime
   return null;
 }
 
-/**
- * Finds active caption word at timeline time T if REAL word timestamps exist.
- * Returns null if T is outside all word bounds.
- */
 export function getActiveCaptionWord(segment: CaptionSegment, timelineTime: number): CaptionWord | null {
   if (!segment.words || segment.words.length === 0) {
     return null;
@@ -121,8 +111,75 @@ export function getActiveCaptionWord(segment: CaptionSegment, timelineTime: numb
 }
 
 /**
- * Shared Canvas Caption Renderer consumed by BOTH PreviewPlayer.tsx and videoExporter.ts.
+ * Splits a CaptionSegment cleanly at timelineTime T.
  */
+export function splitCaptionSegmentAtTime(
+  segment: CaptionSegment,
+  splitTime: number
+): { left: CaptionSegment; right: CaptionSegment } | null {
+  if (splitTime <= segment.startTime || splitTime >= segment.endTime) {
+    return null;
+  }
+
+  let leftWords: CaptionWord[] | undefined;
+  let rightWords: CaptionWord[] | undefined;
+
+  if (segment.words && segment.words.length > 0) {
+    leftWords = segment.words.filter((w) => w.endTime <= splitTime);
+    rightWords = segment.words.filter((w) => w.startTime >= splitTime);
+  }
+
+  const leftText = leftWords && leftWords.length > 0
+    ? leftWords.map((w) => w.word || w.text).join(' ')
+    : segment.text;
+
+  const rightText = rightWords && rightWords.length > 0
+    ? rightWords.map((w) => w.word || w.text).join(' ')
+    : segment.text;
+
+  const left: CaptionSegment = {
+    ...segment,
+    id: `seg_${Date.now()}_1`,
+    endTime: splitTime,
+    text: leftText,
+    words: leftWords,
+  };
+
+  const right: CaptionSegment = {
+    ...segment,
+    id: `seg_${Date.now()}_2`,
+    startTime: splitTime,
+    text: rightText,
+    words: rightWords,
+  };
+
+  return { left, right };
+}
+
+/**
+ * Merges two adjacent CaptionSegments into one.
+ */
+export function mergeCaptionSegments(segA: CaptionSegment, segB: CaptionSegment): CaptionSegment {
+  const startTime = Math.min(segA.startTime, segB.startTime);
+  const endTime = Math.max(segA.endTime, segB.endTime);
+  const mergedText = `${segA.text.trim()} ${segB.text.trim()}`;
+
+  let mergedWords: CaptionWord[] | undefined;
+  if (segA.words || segB.words) {
+    mergedWords = [...(segA.words || []), ...(segB.words || [])].sort((a, b) => a.startTime - b.startTime);
+  }
+
+  return {
+    id: `seg_merged_${Date.now()}`,
+    trackId: segA.trackId,
+    startTime,
+    endTime,
+    text: mergedText,
+    words: mergedWords,
+    styleId: segA.styleId || segB.styleId,
+  };
+}
+
 export function renderCaption(
   ctx: CanvasRenderingContext2D,
   segment: CaptionSegment,
@@ -145,12 +202,10 @@ export function renderCaption(
   const activeWord = getActiveCaptionWord(segment, timelineTime);
   const hasRealWords = Boolean(segment.words && segment.words.length > 0);
 
-  // Measure text width for background pill
   const metrics = ctx.measureText(segment.text);
   const paddingX = 24 * fontScale;
   const paddingY = 14 * fontScale;
 
-  // Background Box
   if (style.background && style.background !== 'transparent') {
     ctx.fillStyle = style.background;
     ctx.fillRect(
@@ -161,9 +216,7 @@ export function renderCaption(
     );
   }
 
-  // Draw Text with Word-Level Highlighting (when real word timestamps exist)
   if (hasRealWords && segment.words) {
-    // Render word by word with real timing highlighting
     let currentX = width / 2 - metrics.width / 2;
     ctx.textAlign = 'left';
 
@@ -184,7 +237,6 @@ export function renderCaption(
       currentX += wordWidth;
     });
   } else {
-    // Standard Segment Subtitle (No fake word jumps)
     if (style.outlineWidth > 0) {
       ctx.strokeStyle = style.outlineColor;
       ctx.lineWidth = style.outlineWidth * fontScale;
