@@ -132,12 +132,17 @@ export const Timeline: React.FC = () => {
       if (e.key === 'Shift') setIsShiftPressed(false);
     };
 
+    const handleWindowClick = () => setClipContextMenu(null);
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('click', handleWindowClick);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('click', handleWindowClick);
     };
+
   }, [
     splitSelectedClip,
     deleteSelectedClip,
@@ -596,11 +601,18 @@ export const Timeline: React.FC = () => {
                     <div
                       key={clip.id}
                       onMouseDown={(e) => handleClipMouseDown(e, clip, track)}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedClipId(clip.id);
+                        setClipContextMenu({ x: e.clientX, y: e.clientY, clipId: clip.id });
+                      }}
                       className={`absolute top-1.5 bottom-1.5 rounded-xl border-2 px-2 flex items-center justify-between cursor-move overflow-hidden transition shadow-md ${clipColorClass} ${
                         isSelected ? 'ring-2 ring-cyan-400 ring-offset-2 ring-offset-dark-950 scale-[1.01] z-20 font-black' : ''
                       }`}
                       style={{ left: `${clipX}px`, width: `${clipW}px` }}
                     >
+
                       {/* Left Trim Handle */}
                       <div
                         onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
@@ -625,6 +637,58 @@ export const Timeline: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Right-Click Clip Context Menu Popover */}
+      {clipContextMenu && (
+        <div
+          className="fixed z-50 bg-dark-900 border border-dark-700 rounded-xl shadow-2xl p-1.5 w-44 text-xs font-bold text-gray-200 select-none"
+          style={{ top: `${clipContextMenu.y}px`, left: `${clipContextMenu.x}px` }}
+          onClick={() => setClipContextMenu(null)}
+        >
+          <button
+            onClick={() => {
+              splitSelectedClip();
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-lg flex items-center justify-between"
+          >
+            <span>Split Clip</span>
+            <span className="text-[10px] text-gray-500">B</span>
+          </button>
+          <button
+            onClick={() => {
+              duplicateSelectedClip();
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-lg flex items-center justify-between"
+          >
+            <span>Duplicate</span>
+            <span className="text-[10px] text-gray-500">Ctrl+D</span>
+          </button>
+          <button
+            onClick={() => {
+              detachAudioFromSelectedClip();
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-lg flex items-center justify-between"
+          >
+            <span>Detach Audio</span>
+            <span className="text-[10px] text-gray-500">Ctrl+Alt+A</span>
+          </button>
+          <div className="my-1 border-t border-dark-800" />
+          <button
+            onClick={() => {
+              deleteSelectedClip();
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-red-500/20 hover:text-red-300 text-red-400 rounded-lg flex items-center justify-between"
+          >
+            <span>Delete</span>
+            <span className="text-[10px] text-red-500/70">Del</span>
+          </button>
+        </div>
+      )}
     </div>
+
   );
 };
