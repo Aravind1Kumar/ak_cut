@@ -1,6 +1,6 @@
 ﻿import { Clip, Track } from '../types/timeline';
 import { mapTimelineTimeToSourceTime, SPEED_CURVE_PRESETS } from './speedEngine';
-import { slipClip, slideClip, rollEdit, insertClip, overwriteClip, getSourceTimeForTimelineTime } from './timelineMath';
+import { slipClip, slideClip, rollEdit, insertClip, overwriteClip, getSourceTimeForTimelineTime, getInterpolatedTransformAtTime } from './timelineMath';
 import { useTimelineStore } from '../store/timelineStore';
 
 const mockClip: Clip = {
@@ -115,24 +115,38 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
     historyIndex: -1,
   });
 
-  // Action 1: Initial state snapshot
-  useTimelineStore.getState().pushHistory(); // index 0: offset 3
-
-  // Action 2: Perform store slip action
-  useTimelineStore.getState().slipSelectedClip(2); // index 1: offset 5
+  useTimelineStore.getState().pushHistory();
+  useTimelineStore.getState().slipSelectedClip(2);
   const stateB_offset = useTimelineStore.getState().tracks[0].clips[0].mediaOffset;
 
-  // Action 3: Execute real store undo()
-  useTimelineStore.getState().undo(); // index 0: offset 3
+  useTimelineStore.getState().undo();
   const stateA_undone_offset = useTimelineStore.getState().tracks[0].clips[0].mediaOffset;
 
-  // Action 4: Execute real store redo()
-  useTimelineStore.getState().redo(); // index 1: offset 5
+  useTimelineStore.getState().redo();
   const stateB_redone_offset = useTimelineStore.getState().tracks[0].clips[0].mediaOffset;
 
   const test9Pass = stateB_offset === 5 && stateA_undone_offset === 3 && stateB_redone_offset === 5;
   results.push(`Test 9 (Real Zustand Store History Undo/Redo): ${test9Pass ? 'PASS' : 'FAIL'} (State B: ${stateB_offset}, Undone State A: ${stateA_undone_offset}, Redone State B: ${stateB_redone_offset})`);
 
-  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass;
+  // Test 10: Universal Keyframe Interpolation Engine (Scale & Opacity Ramping)
+  const keyframeClip: Clip = {
+    ...mockClip,
+    startTime: 10,
+    duration: 10,
+    transform: { x: 0, y: 0, scale: 1.0, rotation: 0, opacity: 1.0 },
+    keyframes: [
+      { id: 'k1', time: 0, transform: { scale: 1.0, opacity: 1.0 } },
+      { id: 'k2', time: 10, transform: { scale: 2.0, opacity: 0.0 } },
+    ],
+  };
+
+  const kStart = getInterpolatedTransformAtTime(keyframeClip, 10);  // local 0s
+  const kMid = getInterpolatedTransformAtTime(keyframeClip, 15);    // local 5s
+  const kEnd = getInterpolatedTransformAtTime(keyframeClip, 20);    // local 10s
+
+  const test10Pass = kStart.scale === 1.0 && kMid.scale === 1.5 && kMid.opacity === 0.5 && kEnd.scale === 2.0 && kEnd.opacity === 0.0;
+  results.push(`Test 10 (Universal Keyframe Interpolation Engine): ${test10Pass ? 'PASS' : 'FAIL'} (Mid Scale: ${kMid.scale}, Mid Opacity: ${kMid.opacity})`);
+
+  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass && test10Pass;
   return { passed, results };
 }

@@ -1,4 +1,4 @@
-﻿import { Clip } from '../types/timeline';
+import { Clip, TransformProps } from '../types/timeline';
 import { mapTimelineTimeToSourceTime } from './speedEngine';
 
 // Unified Source/Timeline Time Math function used across Preview, Exporter, Audio & Timeline actions
@@ -12,6 +12,65 @@ export function getSourceTimeForTimelineTime(clip: Clip, timelineTime: number): 
 
   const maxSourceTime = (clip.mediaOffset || 0) + (clip.sourceDuration || clip.duration * (clip.speed || 1));
   return Math.max(clip.mediaOffset || 0, Math.min(maxSourceTime, sourceTime));
+}
+
+/**
+ * Universal Keyframe Interpolation Engine:
+ * Computes exact transform, opacity, and scale at any timeline time `timelineTime`.
+ */
+export function getInterpolatedTransformAtTime(clip: Clip, timelineTime: number): TransformProps {
+  const baseTransform: TransformProps = {
+    x: clip.transform?.x ?? 0,
+    y: clip.transform?.y ?? 0,
+    scale: clip.transform?.scale ?? 1,
+    rotation: clip.transform?.rotation ?? 0,
+    opacity: clip.transform?.opacity ?? 1,
+    blendMode: clip.transform?.blendMode ?? 'normal',
+    flipHorizontal: clip.transform?.flipHorizontal,
+    flipVertical: clip.transform?.flipVertical,
+    cropTop: clip.transform?.cropTop,
+    cropBottom: clip.transform?.cropBottom,
+    cropLeft: clip.transform?.cropLeft,
+    cropRight: clip.transform?.cropRight,
+  };
+
+  if (!clip.keyframes || clip.keyframes.length === 0) {
+    return baseTransform;
+  }
+
+  const localTime = Math.max(0, timelineTime - clip.startTime);
+  const sorted = [...clip.keyframes].sort((a, b) => a.time - b.time);
+
+  if (localTime <= sorted[0].time) {
+    return { ...baseTransform, ...sorted[0].transform };
+  }
+
+  if (localTime >= sorted[sorted.length - 1].time) {
+    return { ...baseTransform, ...sorted[sorted.length - 1].transform };
+  }
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const k1 = sorted[i];
+    const k2 = sorted[i + 1];
+    if (localTime >= k1.time && localTime <= k2.time) {
+      const range = k2.time - k1.time;
+      const progress = range > 0 ? (localTime - k1.time) / range : 0;
+
+      const t1 = { ...baseTransform, ...k1.transform };
+      const t2 = { ...baseTransform, ...k2.transform };
+
+      return {
+        ...baseTransform,
+        x: t1.x + (t2.x - t1.x) * progress,
+        y: t1.y + (t2.y - t1.y) * progress,
+        scale: t1.scale + (t2.scale - t1.scale) * progress,
+        rotation: t1.rotation + (t2.rotation - t1.rotation) * progress,
+        opacity: t1.opacity + (t2.opacity - t1.opacity) * progress,
+      };
+    }
+  }
+
+  return baseTransform;
 }
 
 /**
@@ -61,7 +120,7 @@ export function slideClip(clips: Clip[], targetClipId: string, timeDelta: number
         ...next,
         startTime: next.startTime + actualDelta,
         duration: Math.max(0.1, next.duration - actualDelta),
-        mediaOffset: Math.max(0, (next.mediaOffset || 0) + actualDelta),
+        mediaOffset: (next.mediaOffset || 0) + actualDelta,
       };
     }
     return c;
@@ -69,30 +128,32 @@ export function slideClip(clips: Clip[], targetClipId: string, timeDelta: number
 }
 
 /**
- * Roll Edit: Moves boundary between two adjacent clips without altering sequence duration.
+ * Roll Edit: Adjusts the boundary between two adjacent clips.
  */
 export function rollEdit(leftClip: Clip, rightClip: Clip, delta: number): { left: Clip; right: Clip } {
   const minDuration = 0.1;
-  const maxLeftDelta = rightClip.duration - minDuration;
-  const maxRightDelta = leftClip.duration - minDuration;
-  const clampedDelta = Math.max(-maxRightDelta, Math.min(maxLeftDelta, delta));
+  const maxLeftIncrease = (rightClip.duration - minDuration);
+  const maxRightIncrease = (leftClip.duration - minDuration);
 
-  return {
-    left: {
-      ...leftClip,
-      duration: Math.max(minDuration, leftClip.duration + clampedDelta),
-    },
-    right: {
-      ...rightClip,
-      startTime: rightClip.startTime + clampedDelta,
-      duration: Math.max(minDuration, rightClip.duration - clampedDelta),
-      mediaOffset: Math.max(0, (rightClip.mediaOffset || 0) + clampedDelta),
-    },
+  const clampedDelta = Math.max(-maxRightIncrease, Math.min(maxLeftIncrease, delta));
+
+  const updatedLeft: Clip = {
+    ...leftClip,
+    duration: Math.max(minDuration, leftClip.duration + clampedDelta),
   };
+
+  const updatedRight: Clip = {
+    ...rightClip,
+    startTime: rightClip.startTime + clampedDelta,
+    duration: Math.max(minDuration, rightClip.duration - clampedDelta),
+    mediaOffset: Math.max(0, (rightClip.mediaOffset || 0) + clampedDelta),
+  };
+
+  return { left: updatedLeft, right: updatedRight };
 }
 
 /**
- * Insert Edit: Inserts a new clip at target startTime and shifts downstream clips forward.
+ * Insert Edit: Places clip at target position and shifts all downstream clips to the right.
  */
 export function insertClip(clips: Clip[], newClip: Clip): Clip[] {
   const targetStart = newClip.startTime;
@@ -121,12 +182,10 @@ export function overwriteClip(clips: Clip[], newClip: Clip): Clip[] {
     const cStart = c.startTime;
     const cEnd = c.startTime + c.duration;
 
-    // Completely covered -> remove
     if (cStart >= oStart && cEnd <= oEnd) {
       continue;
     }
 
-    // Overlaps start of existing clip
     if (oStart <= cStart && oEnd > cStart && oEnd < cEnd) {
       const trimAmount = oEnd - cStart;
       result.push({
@@ -138,7 +197,6 @@ export function overwriteClip(clips: Clip[], newClip: Clip): Clip[] {
       continue;
     }
 
-    // Overlaps end of existing clip
     if (cStart < oStart && cEnd > oStart && cEnd <= oEnd) {
       result.push({
         ...c,
@@ -147,7 +205,6 @@ export function overwriteClip(clips: Clip[], newClip: Clip): Clip[] {
       continue;
     }
 
-    // Overwrites middle of existing clip (splits into left and right)
     if (cStart < oStart && cEnd > oEnd) {
       const leftPart: Clip = {
         ...c,
@@ -164,7 +221,6 @@ export function overwriteClip(clips: Clip[], newClip: Clip): Clip[] {
       continue;
     }
 
-    // No overlap
     result.push(c);
   }
 

@@ -1240,6 +1240,28 @@ export const Inspector: React.FC = () => {
                 className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
               />
             </div>
+
+            {/* Blend Mode Selector */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-semibold text-gray-400">Blend Mode</span>
+              </div>
+              <select
+                value={selectedClip.transform.blendMode || 'normal'}
+                onChange={(e) => {
+                  pushHistory();
+                  updateClipTransform(selectedClip!.id, { blendMode: e.target.value as any });
+                }}
+                className="w-full bg-dark-950 border border-dark-700 rounded-xl px-2.5 py-1.5 text-xs text-cyan-300 font-bold outline-none focus:border-cyan-400 cursor-pointer"
+              >
+                <option value="normal">Normal (Default)</option>
+                <option value="multiply">Multiply (Darken)</option>
+                <option value="screen">Screen (Lighten)</option>
+                <option value="overlay">Overlay (Contrast)</option>
+                <option value="darken">Darken Only</option>
+                <option value="lighten">Lighten Only</option>
+              </select>
+            </div>
           </div>
         )}
       </div>
