@@ -72,6 +72,13 @@ export type TextAnimationType =
   | 'typewriter'
   | 'bounce';
 
+export type TextTransformType = 'none' | 'uppercase' | 'lowercase' | 'titlecase';
+export type TextFillType = 'solid' | 'gradient';
+export type TextBackgroundPreset = 'none' | 'solid' | 'rounded' | 'pill' | 'highlight' | 'label';
+export type TextOutlinePreset = 'none' | 'thin' | 'medium' | 'heavy';
+export type TextShadowPreset = 'none' | 'soft' | 'hard' | 'glow' | 'longShadow';
+export type TextGlowPreset = 'none' | 'cyan' | 'blue' | 'purple' | 'pink' | 'white';
+
 export interface TextProps {
   content: string;
   fontFamily: string;
@@ -80,26 +87,40 @@ export interface TextProps {
   backgroundColor: string;
   borderColor: string;
   borderWidth: number;
-  alignment: 'left' | 'center' | 'right';
+  alignment: 'left' | 'center' | 'right' | 'justify';
   verticalAlignment?: 'top' | 'center' | 'bottom';
   bold: boolean;
   italic: boolean;
   underline?: boolean;
+  strikethrough?: boolean;
+  textTransform?: TextTransformType;
+  fillType?: TextFillType;
+  gradientColorStop2?: string;
+  gradientAngle?: number;    // 0 to 360 deg
   letterSpacing?: number;    // -20 to +50 px
   lineHeight?: number;       // 0.5 to 3.0
   backgroundEnabled?: boolean;
+  backgroundColor2?: string;
   backgroundOpacity?: number; // 0.0 - 1.0
   backgroundPadding?: number; // px
   borderRadius?: number;      // px
+  backgroundPreset?: TextBackgroundPreset;
   outlineEnabled?: boolean;
   outlineColor?: string;
   outlineWidth?: number;      // 0 - 20 px
+  outlinePreset?: TextOutlinePreset;
   shadowEnabled?: boolean;
   shadowColor?: string;
   shadowOpacity?: number;     // 0.0 - 1.0
   shadowBlur?: number;        // 0 - 50 px
   shadowOffsetX?: number;     // -50 to +50 px
   shadowOffsetY?: number;     // -50 to +50 px
+  shadowPreset?: TextShadowPreset;
+  glowEnabled?: boolean;
+  glowColor?: string;
+  glowBlur?: number;          // 0 - 60 px
+  glowIntensity?: number;     // 0.0 - 1.0
+  glowPreset?: TextGlowPreset;
   boxWidthMode?: 'auto' | 'fixed';
   boxWidth?: number;          // px
   animation?: TextAnimationType;

@@ -28,15 +28,35 @@ import {
   Bold,
   Italic,
   Underline,
+  Strikethrough,
   AlignLeft,
   AlignCenter,
   AlignRight,
+  AlignJustify,
   Palette,
   Square,
   Sparkles as SparklesIcon,
+  Search,
+  RefreshCw,
+  Sun,
+  Flame,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
-import { BlendMode, CaptionStyle, FilterProps, KeyframeEasing, SpeedCurveType, TextAnimationType, TextProps } from '../types/timeline';
+import {
+  BlendMode,
+  CaptionStyle,
+  FilterProps,
+  KeyframeEasing,
+  SpeedCurveType,
+  TextAnimationType,
+  TextBackgroundPreset,
+  TextFillType,
+  TextGlowPreset,
+  TextOutlinePreset,
+  TextProps,
+  TextShadowPreset,
+  TextTransformType,
+} from '../types/timeline';
 import { DEFAULT_CAPTION_STYLES } from '../utils/captionEngine';
 import { normalizeClipAudioGain } from '../utils/audioNormalizeEngine';
 import { SPEED_CURVE_PRESETS } from '../utils/speedEngine';
@@ -51,24 +71,38 @@ const SUPPORTED_FONTS = [
   'Arial, sans-serif',
   'Helvetica, sans-serif',
   'Open Sans, sans-serif',
+  'Lato, sans-serif',
+  'Nunito, sans-serif',
+  'Raleway, sans-serif',
+  'Oswald, sans-serif',
+  'Playfair Display, serif',
   'Georgia, serif',
   'Times New Roman, serif',
   'Courier New, monospace',
   'Impact, sans-serif',
+  'Bebas Neue, sans-serif',
 ];
 
-const COLOR_SWATCHES = [
+const QUICK_COLORS = [
   { name: 'White', hex: '#ffffff' },
   { name: 'Black', hex: '#000000' },
-  { name: 'Red', hex: '#ff0000' },
-  { name: 'Green', hex: '#00ff00' },
-  { name: 'Blue', hex: '#0000ff' },
-  { name: 'Yellow', hex: '#ffff00' },
-  { name: 'Cyan', hex: '#00ffff' },
-  { name: 'Magenta', hex: '#ff00ff' },
+  { name: 'Red', hex: '#ef4444' },
+  { name: 'Orange', hex: '#f97316' },
+  { name: 'Yellow', hex: '#eab308' },
+  { name: 'Green', hex: '#22c55e' },
+  { name: 'Cyan', hex: '#06b6d4' },
+  { name: 'Blue', hex: '#3b82f6' },
+  { name: 'Purple', hex: '#a855f7' },
+  { name: 'Pink', hex: '#ec4899' },
 ];
 
+const FONT_SIZE_PRESETS = [16, 24, 32, 48, 64, 72, 96, 120, 160, 200, 300];
+
 export const Inspector: React.FC = () => {
+  const [activeTextTab, setActiveTextTab] = useState<'text' | 'style' | 'effects' | 'presets'>('text');
+  const [fontSearchQuery, setFontSearchQuery] = useState('');
+  const [isFontMenuOpen, setIsFontMenuOpen] = useState(false);
+
   const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({
     text: true,
     keyframes: false,
@@ -99,6 +133,7 @@ export const Inspector: React.FC = () => {
     ungroupSelectedClips,
     copySelectedClipTextStyle,
     pasteSelectedClipTextStyle,
+    resetSelectedClipTextStyle,
     copiedTextStyle,
     beginTransaction,
     commitTransaction,
@@ -126,7 +161,7 @@ export const Inspector: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-gray-500">
           <Sliders className="w-12 h-12 text-gray-600 mb-3 stroke-1" />
           <h3 className="text-sm font-bold text-gray-300 mb-1">No Clip Selected</h3>
-          <p className="text-xs text-gray-500">Click a clip on the timeline to edit properties, typography, keyframes, or transforms.</p>
+          <p className="text-xs text-gray-500">Click a clip on the timeline to edit typography, keyframes, or transforms.</p>
         </div>
       </aside>
     );
@@ -188,7 +223,15 @@ export const Inspector: React.FC = () => {
     alignment: 'center',
     bold: true,
     italic: false,
+    underline: false,
+    strikethrough: false,
+    textTransform: 'none',
+    fillType: 'solid',
   };
+
+  const filteredFonts = SUPPORTED_FONTS.filter((font) =>
+    font.toLowerCase().includes(fontSearchQuery.toLowerCase())
+  );
 
   return (
     <aside className="w-80 bg-dark-900 border-l border-dark-700 flex flex-col p-4 select-none shrink-0 overflow-y-auto max-h-full space-y-4">
@@ -225,423 +268,639 @@ export const Inspector: React.FC = () => {
         </div>
       )}
 
-      {/* DEDICATED TEXT & TYPOGRAPHY SECTION */}
+      {/* DEDICATED PROFESSIONAL TEXT EDITOR */}
       {selectedClip.type === 'text' && (
-        <div className="border border-cyan-500/40 rounded-xl bg-dark-900/90 overflow-hidden shadow-xl flex flex-col">
-          <button
-            onClick={() => toggleSection('text')}
-            className="w-full px-3 py-2.5 bg-cyan-500/10 flex items-center justify-between text-xs font-bold text-cyan-300 uppercase tracking-wider border-b border-cyan-500/20"
-          >
-            <span className="flex items-center space-x-1.5">
+        <div className="border border-cyan-500/40 rounded-2xl bg-dark-950/90 overflow-hidden shadow-2xl flex flex-col">
+          {/* Section Header */}
+          <div className="px-3 py-2.5 bg-gradient-to-r from-cyan-950/40 to-dark-900 border-b border-cyan-500/30 flex items-center justify-between">
+            <span className="flex items-center space-x-2 text-xs font-black text-cyan-300 uppercase tracking-widest">
               <Type className="w-4 h-4 text-cyan-400" />
-              <span>TEXT & TYPOGRAPHY</span>
+              <span>TEXT EDITOR</span>
             </span>
-            {openSections.text ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-          </button>
 
-          {openSections.text && (
-            <div className="p-3 space-y-4 overflow-y-auto max-h-[calc(100vh-200px)]">
-              {/* 1. Text Content Input Area */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Text Content (Multiline)</span>
-                  <button
-                    onClick={() => setEditingTextClipId(selectedClip!.id)}
-                    className="text-[10px] text-cyan-400 hover:underline font-bold"
-                  >
-                    Edit on Canvas
-                  </button>
-                </div>
-                <textarea
-                  value={currentText.content}
-                  onChange={(e) => updateClipText(selectedClip!.id, { content: e.target.value })}
-                  rows={2}
-                  className="w-full bg-dark-800 border border-dark-700 rounded-xl p-2.5 text-xs text-white outline-none focus:border-cyan-500 font-sans resize-none"
-                  placeholder="Type text content here..."
-                />
-              </div>
+            {/* Quick Actions */}
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={copySelectedClipTextStyle}
+                className="p-1 hover:bg-dark-800 rounded text-gray-400 hover:text-cyan-300 transition"
+                title="Copy TextStyle"
+              >
+                <Copy className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={pasteSelectedClipTextStyle}
+                disabled={!copiedTextStyle}
+                className="p-1 hover:bg-dark-800 rounded text-gray-400 hover:text-green-400 disabled:opacity-30 transition"
+                title="Paste TextStyle"
+              >
+                <CheckCircle className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={resetSelectedClipTextStyle}
+                className="p-1 hover:bg-dark-800 rounded text-gray-400 hover:text-red-400 transition"
+                title="Reset TextStyle Defaults"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
 
-              {/* 2. WORD-PROCESSOR STYLE TYPOGRAPHY TOOLBAR */}
-              <div className="p-3 bg-dark-800/90 border border-dark-700 rounded-xl space-y-3 shadow-inner">
-                {/* Row A: Font Family & Size */}
-                <div className="flex items-center space-x-2">
-                  <div className="flex-1">
-                    <label className="text-[10px] font-bold text-gray-400 block mb-0.5">FONT</label>
-                    <select
-                      value={currentText.fontFamily}
-                      onChange={(e) => {
-                        pushHistory();
-                        updateClipText(selectedClip!.id, { fontFamily: e.target.value });
-                      }}
-                      className="w-full bg-dark-900 border border-dark-700 rounded-lg px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-500 font-medium cursor-pointer"
-                    >
-                      {SUPPORTED_FONTS.map((font) => (
-                        <option key={font} value={font}>
-                          {font.split(',')[0]}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+          {/* Sticky Tab Navigation Bar */}
+          <div className="flex items-center border-b border-dark-800 bg-dark-900/90 text-xs font-bold text-gray-400">
+            {(['text', 'style', 'effects', 'presets'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTextTab(tab)}
+                className={`flex-1 py-2 text-center uppercase tracking-wider transition border-b-2 ${
+                  activeTextTab === tab
+                    ? 'border-cyan-400 text-cyan-300 bg-cyan-500/10 font-black'
+                    : 'border-transparent hover:text-gray-200 hover:bg-dark-800'
+                }`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-                  <div className="w-24">
-                    <label className="text-[10px] font-bold text-gray-400 block mb-0.5">SIZE (PX)</label>
-                    <input
-                      type="number"
-                      min="8"
-                      max="300"
-                      value={currentText.fontSize}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!isNaN(val)) {
-                          pushHistory();
-                          updateClipText(selectedClip!.id, { fontSize: Math.max(8, Math.min(300, val)) });
-                        }
-                      }}
-                      className="w-full bg-dark-900 border border-dark-700 rounded-lg px-2 py-1 text-xs text-cyan-300 font-mono font-bold text-center outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Font Size Range Slider */}
+          {/* Scrollable Editor Container */}
+          <div className="p-3 space-y-4 overflow-y-auto max-h-[calc(100vh-230px)]">
+            {/* TAB 1: TEXT CONTENT & TYPOGRAPHY */}
+            {(activeTextTab === 'text' || activeTextTab === 'style') && (
+              <>
+                {/* Text Content Input Area */}
                 <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">TEXT CONTENT</span>
+                    <button
+                      onClick={() => setEditingTextClipId(selectedClip!.id)}
+                      className="text-[10px] text-cyan-400 hover:underline font-bold"
+                    >
+                      Edit on Canvas
+                    </button>
+                  </div>
+                  <textarea
+                    value={currentText.content}
+                    onChange={(e) => updateClipText(selectedClip!.id, { content: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                        (e.target as HTMLElement).blur();
+                      }
+                    }}
+                    rows={3}
+                    className="w-full bg-dark-900 border border-dark-700 rounded-xl p-3 text-xs text-white outline-none focus:border-cyan-400 font-sans resize-none shadow-inner"
+                    placeholder="Type text content here..."
+                  />
+                </div>
+
+                {/* SEARCHABLE FONT SELECTOR */}
+                <div className="relative">
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">FONT FAMILY</label>
+                  <button
+                    onClick={() => setIsFontMenuOpen(!isFontMenuOpen)}
+                    className="w-full bg-dark-900 border border-dark-700 hover:border-cyan-500/60 rounded-xl px-3 py-2 text-xs text-white font-medium flex items-center justify-between transition"
+                  >
+                    <span style={{ fontFamily: currentText.fontFamily }}>{currentText.fontFamily.split(',')[0]}</span>
+                    <ChevronDown className="w-4 h-4 text-cyan-400" />
+                  </button>
+
+                  {/* Font Search Dropdown Modal */}
+                  {isFontMenuOpen && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-dark-900 border border-dark-700 rounded-2xl shadow-2xl z-30 p-2 space-y-2">
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 text-gray-500 absolute left-2.5 top-2.5" />
+                        <input
+                          type="text"
+                          value={fontSearchQuery}
+                          onChange={(e) => setFontSearchQuery(e.target.value)}
+                          placeholder="Search fonts..."
+                          className="w-full bg-dark-950 border border-dark-700 rounded-lg pl-8 pr-2 py-1.5 text-xs text-white outline-none focus:border-cyan-400"
+                        />
+                      </div>
+                      <div className="max-h-48 overflow-y-auto space-y-0.5">
+                        {filteredFonts.map((font) => (
+                          <button
+                            key={font}
+                            onClick={() => {
+                              pushHistory();
+                              updateClipText(selectedClip!.id, { fontFamily: font });
+                              setIsFontMenuOpen(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
+                              currentText.fontFamily === font ? 'bg-cyan-500/20 text-cyan-300 font-bold' : 'text-gray-300 hover:bg-dark-800'
+                            }`}
+                            style={{ fontFamily: font }}
+                          >
+                            <span>{font.split(',')[0]}</span>
+                            {currentText.fontFamily === font && <CheckCircle className="w-3.5 h-3.5 text-cyan-400" />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* FONT SIZE CONTROLS */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">FONT SIZE</span>
+                    <div className="flex items-center space-x-1">
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { fontSize: Math.max(8, currentText.fontSize - 4) });
+                        }}
+                        className="w-6 h-6 rounded bg-dark-800 hover:bg-dark-700 text-gray-300 font-bold text-xs flex items-center justify-center border border-dark-700"
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        min="8"
+                        max="300"
+                        value={currentText.fontSize}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value, 10);
+                          if (!isNaN(val)) {
+                            pushHistory();
+                            updateClipText(selectedClip!.id, { fontSize: Math.max(8, Math.min(300, val)) });
+                          }
+                        }}
+                        className="w-16 bg-dark-950 border border-dark-700 rounded-lg px-2 py-0.5 text-xs text-cyan-300 font-mono font-bold text-center outline-none focus:border-cyan-400"
+                      />
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { fontSize: Math.min(300, currentText.fontSize + 4) });
+                        }}
+                        className="w-6 h-6 rounded bg-dark-800 hover:bg-dark-700 text-gray-300 font-bold text-xs flex items-center justify-center border border-dark-700"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Range Slider */}
                   <input
                     type="range"
                     min="8"
                     max="300"
                     value={currentText.fontSize}
-                    onChange={(e) => {
-                      updateClipText(selectedClip!.id, { fontSize: parseInt(e.target.value, 10) });
-                    }}
+                    onChange={(e) => updateClipText(selectedClip!.id, { fontSize: parseInt(e.target.value, 10) })}
                     onMouseDown={() => pushHistory()}
-                    className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer"
+                    className="w-full accent-cyan-400 bg-dark-950 rounded-lg h-1.5 cursor-pointer"
                   />
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex items-center space-x-1 overflow-x-auto pt-1 no-scrollbar">
+                    {FONT_SIZE_PRESETS.map((sz) => (
+                      <button
+                        key={sz}
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { fontSize: sz });
+                        }}
+                        className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border transition ${
+                          currentText.fontSize === sz
+                            ? 'bg-cyan-500 text-black border-cyan-400 font-black'
+                            : 'bg-dark-950 text-gray-400 border-dark-700 hover:text-white'
+                        }`}
+                      >
+                        {sz}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {/* Row B: Formatting Buttons [ B ] [ I ] [ U ] & Alignment [ Left ] [ Center ] [ Right ] */}
-                <div className="flex items-center justify-between gap-2 pt-1 border-t border-dark-700/60">
-                  {/* Style B I U */}
-                  <div className="flex items-center space-x-1 bg-dark-900 p-1 rounded-xl border border-dark-700">
-                    <button
-                      onClick={() => {
-                        pushHistory();
-                        updateClipText(selectedClip!.id, { bold: !currentText.bold });
-                      }}
-                      className={`w-8 h-8 rounded-lg transition font-bold text-xs flex items-center justify-center ${
-                        currentText.bold
-                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-extrabold ring-1 ring-cyan-400'
-                          : 'text-gray-400 hover:text-white hover:bg-dark-800'
-                      }`}
-                      title="Bold (B)"
-                    >
-                      <Bold className="w-4 h-4 stroke-[2.5]" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        pushHistory();
-                        updateClipText(selectedClip!.id, { italic: !currentText.italic });
-                      }}
-                      className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
-                        currentText.italic
-                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold ring-1 ring-cyan-400'
-                          : 'text-gray-400 hover:text-white hover:bg-dark-800'
-                      }`}
-                      title="Italic (I)"
-                    >
-                      <Italic className="w-4 h-4 stroke-[2.5]" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        pushHistory();
-                        updateClipText(selectedClip!.id, { underline: !currentText.underline });
-                      }}
-                      className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
-                        currentText.underline
-                          ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold ring-1 ring-cyan-400'
-                          : 'text-gray-400 hover:text-white hover:bg-dark-800'
-                      }`}
-                      title="Underline (U)"
-                    >
-                      <Underline className="w-4 h-4 stroke-[2.5]" />
-                    </button>
+                {/* WORD-PROCESSOR TOOLBAR: B I U S Aa */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">FORMATTING & CASE</span>
+                  <div className="flex items-center justify-between gap-2">
+                    {/* B I U S Buttons */}
+                    <div className="flex items-center space-x-1 bg-dark-950 p-1 rounded-xl border border-dark-700">
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { bold: !currentText.bold });
+                        }}
+                        className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
+                          currentText.bold ? 'bg-cyan-500 text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Bold"
+                      >
+                        <Bold className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { italic: !currentText.italic });
+                        }}
+                        className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
+                          currentText.italic ? 'bg-cyan-500 text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Italic"
+                      >
+                        <Italic className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { underline: !currentText.underline });
+                        }}
+                        className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
+                          currentText.underline ? 'bg-cyan-500 text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Underline"
+                      >
+                        <Underline className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { strikethrough: !currentText.strikethrough });
+                        }}
+                        className={`w-8 h-8 rounded-lg transition text-xs flex items-center justify-center ${
+                          currentText.strikethrough ? 'bg-cyan-500 text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
+                        }`}
+                        title="Strikethrough"
+                      >
+                        <Strikethrough className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                    </div>
+
+                    {/* Text Transform / Case */}
+                    <div className="flex-1">
+                      <select
+                        value={currentText.textTransform || 'none'}
+                        onChange={(e) => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { textTransform: e.target.value as TextTransformType });
+                        }}
+                        className="w-full bg-dark-950 border border-dark-700 rounded-xl px-2 py-2 text-xs text-cyan-300 font-bold outline-none focus:border-cyan-400"
+                      >
+                        <option value="none">Aa Normal Case</option>
+                        <option value="uppercase">AA UPPERCASE</option>
+                        <option value="lowercase">aa lowercase</option>
+                        <option value="titlecase">Aa Title Case</option>
+                      </select>
+                    </div>
                   </div>
 
-                  {/* Alignment Left Center Right */}
-                  <div className="flex items-center space-x-1 bg-dark-900 p-1 rounded-xl border border-dark-700">
-                    {(['left', 'center', 'right'] as const).map((align) => (
+                  {/* Alignment Toolbar */}
+                  <div className="flex items-center space-x-1 bg-dark-950 p-1 rounded-xl border border-dark-700">
+                    {(['left', 'center', 'right', 'justify'] as const).map((align) => (
                       <button
                         key={align}
                         onClick={() => {
                           pushHistory();
                           updateClipText(selectedClip!.id, { alignment: align });
                         }}
-                        className={`w-8 h-8 rounded-lg transition flex items-center justify-center ${
-                          currentText.alignment === align
-                            ? 'bg-cyan-500 text-black shadow-md shadow-cyan-500/20 font-bold ring-1 ring-cyan-400'
-                            : 'text-gray-400 hover:text-white hover:bg-dark-800'
+                        className={`flex-1 py-1.5 rounded-lg transition flex items-center justify-center ${
+                          currentText.alignment === align ? 'bg-cyan-500 text-black font-black shadow-md' : 'text-gray-400 hover:text-white'
                         }`}
-                        title={`Align ${align.charAt(0).toUpperCase() + align.slice(1)}`}
+                        title={`Align ${align.toUpperCase()}`}
                       >
                         {align === 'left' ? (
                           <AlignLeft className="w-4 h-4 stroke-[2.5]" />
                         ) : align === 'center' ? (
                           <AlignCenter className="w-4 h-4 stroke-[2.5]" />
-                        ) : (
+                        ) : align === 'right' ? (
                           <AlignRight className="w-4 h-4 stroke-[2.5]" />
+                        ) : (
+                          <AlignJustify className="w-4 h-4 stroke-[2.5]" />
                         )}
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Row C: Text Color Picker + Editable HEX Input */}
-                <div className="pt-2 border-t border-dark-700/60 space-y-2">
+                {/* TEXT COLOR & FILL MODE */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">TEXT COLOR</span>
-                    <div className="flex items-center space-x-2 bg-dark-900 px-2 py-1.5 rounded-lg border border-dark-700">
-                      <div className="relative w-6 h-6 rounded border border-dark-600 overflow-hidden cursor-pointer flex items-center justify-center">
-                        <input
-                          type="color"
-                          value={currentText.color && currentText.color.startsWith('#') && currentText.color.length === 7 ? currentText.color : '#ffffff'}
-                          onChange={(e) => {
-                            updateClipText(selectedClip!.id, { color: e.target.value });
-                          }}
-                          onMouseDown={() => pushHistory()}
-                          className="absolute -inset-2 w-10 h-10 cursor-pointer border-0 bg-transparent opacity-100"
-                          title="Click to open color picker"
-                        />
-                      </div>
-                      <input
-                        type="text"
-                        value={currentText.color}
-                        onChange={(e) => {
-                          updateClipText(selectedClip!.id, { color: e.target.value });
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">FILL TYPE & COLOR</span>
+                    <div className="flex items-center space-x-1 bg-dark-950 p-0.5 rounded-lg border border-dark-700 text-[10px] font-bold">
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { fillType: 'solid' });
                         }}
-                        className="w-16 bg-transparent text-xs font-mono font-bold text-cyan-300 uppercase outline-none"
-                        placeholder="#FFFFFF"
-                      />
+                        className={`px-2 py-0.5 rounded ${currentText.fillType !== 'gradient' ? 'bg-cyan-500 text-black' : 'text-gray-400'}`}
+                      >
+                        Solid
+                      </button>
+                      <button
+                        onClick={() => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { fillType: 'gradient', gradientColorStop2: currentText.gradientColorStop2 || '#00f2fe' });
+                        }}
+                        className={`px-2 py-0.5 rounded ${currentText.fillType === 'gradient' ? 'bg-cyan-500 text-black' : 'text-gray-400'}`}
+                      >
+                        Gradient
+                      </button>
                     </div>
                   </div>
 
-                  {/* Row D: Quick Color Swatches Grid */}
+                  {/* Color Pickers */}
+                  <div className="flex items-center space-x-3">
+                    {/* Primary Color Picker */}
+                    <div className="flex items-center space-x-2 bg-dark-950 p-2 rounded-xl border border-dark-700 flex-1">
+                      <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-dark-600 shrink-0">
+                        <input
+                          type="color"
+                          value={currentText.color && currentText.color.startsWith('#') ? currentText.color : '#ffffff'}
+                          onChange={(e) => updateClipText(selectedClip!.id, { color: e.target.value })}
+                          onMouseDown={() => pushHistory()}
+                          className="absolute -inset-2 w-12 h-12 cursor-pointer border-0 bg-transparent"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-bold text-gray-500 uppercase">COLOR 1</span>
+                        <input
+                          type="text"
+                          value={currentText.color}
+                          onChange={(e) => updateClipText(selectedClip!.id, { color: e.target.value })}
+                          className="w-16 bg-transparent text-xs font-mono font-bold text-cyan-300 uppercase outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Gradient Secondary Color Picker */}
+                    {currentText.fillType === 'gradient' && (
+                      <div className="flex items-center space-x-2 bg-dark-950 p-2 rounded-xl border border-dark-700 flex-1">
+                        <div className="relative w-8 h-8 rounded-lg overflow-hidden border border-dark-600 shrink-0">
+                          <input
+                            type="color"
+                            value={currentText.gradientColorStop2 || '#00f2fe'}
+                            onChange={(e) => updateClipText(selectedClip!.id, { gradientColorStop2: e.target.value })}
+                            onMouseDown={() => pushHistory()}
+                            className="absolute -inset-2 w-12 h-12 cursor-pointer border-0 bg-transparent"
+                          />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-bold text-gray-500 uppercase">COLOR 2</span>
+                          <input
+                            type="text"
+                            value={currentText.gradientColorStop2 || '#00f2fe'}
+                            onChange={(e) => updateClipText(selectedClip!.id, { gradientColorStop2: e.target.value })}
+                            className="w-16 bg-transparent text-xs font-mono font-bold text-cyan-300 uppercase outline-none"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quick Color Swatches */}
                   <div>
-                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider block mb-1">QUICK COLORS</span>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {COLOR_SWATCHES.map((swatch) => (
+                    <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider block mb-1">QUICK PALETTE</span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {QUICK_COLORS.map((c) => (
                         <button
-                          key={swatch.hex}
+                          key={c.hex}
                           onClick={() => {
                             pushHistory();
-                            updateClipText(selectedClip!.id, { color: swatch.hex });
+                            updateClipText(selectedClip!.id, { color: c.hex });
                           }}
-                          className={`py-1 px-1.5 rounded-lg border border-dark-700 text-[10px] font-bold transition flex items-center space-x-1.5 ${
-                            currentText.color.toLowerCase() === swatch.hex.toLowerCase()
-                              ? 'ring-2 ring-cyan-400 bg-dark-800'
-                              : 'bg-dark-900/80 hover:bg-dark-800'
+                          className={`py-1 px-1 rounded-lg border border-dark-700 transition flex items-center space-x-1.5 ${
+                            currentText.color.toLowerCase() === c.hex.toLowerCase() ? 'ring-2 ring-cyan-400 bg-dark-800' : 'bg-dark-950'
                           }`}
                         >
-                          <span className="w-3.5 h-3.5 rounded-full border border-dark-600 shrink-0" style={{ backgroundColor: swatch.hex }} />
-                          <span className="text-gray-300 text-[9px] truncate">{swatch.name}</span>
+                          <span className="w-3.5 h-3.5 rounded-full border border-dark-600 shrink-0" style={{ backgroundColor: c.hex }} />
+                          <span className="text-[9px] text-gray-300 font-bold truncate">{c.name}</span>
                         </button>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                {/* Row E: Letter Spacing & Line Height */}
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-dark-700/60">
-                  <div>
-                    <span className="text-[10px] font-bold text-gray-400 block mb-1">LETTER SPACING ({currentText.letterSpacing || 0}px)</span>
-                    <input
-                      type="range"
-                      min="-10"
-                      max="40"
-                      value={currentText.letterSpacing || 0}
-                      onChange={(e) => updateClipText(selectedClip!.id, { letterSpacing: parseInt(e.target.value, 10) })}
-                      onMouseDown={() => pushHistory()}
-                      className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer"
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-gray-400 block mb-1">LINE HEIGHT ({currentText.lineHeight || 1.2})</span>
-                    <input
-                      type="range"
-                      min="0.8"
-                      max="2.5"
-                      step="0.1"
-                      value={currentText.lineHeight || 1.2}
-                      onChange={(e) => updateClipText(selectedClip!.id, { lineHeight: parseFloat(e.target.value) })}
-                      onMouseDown={() => pushHistory()}
-                      className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer"
-                    />
+                {/* SPACING CONTROLS */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">SPACING & LEADING</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <span className="text-[10px] font-bold text-gray-400 block mb-1">LETTER SPACING ({currentText.letterSpacing || 0}px)</span>
+                      <input
+                        type="range"
+                        min="-10"
+                        max="40"
+                        value={currentText.letterSpacing || 0}
+                        onChange={(e) => updateClipText(selectedClip!.id, { letterSpacing: parseInt(e.target.value, 10) })}
+                        onMouseDown={() => pushHistory()}
+                        className="w-full accent-cyan-400 bg-dark-950 rounded-lg h-1.5 cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-gray-400 block mb-1">LINE HEIGHT ({currentText.lineHeight || 1.2})</span>
+                      <input
+                        type="range"
+                        min="0.8"
+                        max="2.5"
+                        step="0.1"
+                        value={currentText.lineHeight || 1.2}
+                        onChange={(e) => updateClipText(selectedClip!.id, { lineHeight: parseFloat(e.target.value) })}
+                        onMouseDown={() => pushHistory()}
+                        className="w-full accent-cyan-400 bg-dark-950 rounded-lg h-1.5 cursor-pointer"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              </>
+            )}
 
-              {/* 3. Text Style Presets Grid */}
-              <div className="p-3 bg-dark-800/60 border border-dark-700 rounded-xl space-y-2">
+            {/* TAB 2 & 3: EFFECTS (BACKGROUND, STROKE, SHADOW, GLOW) */}
+            {(activeTextTab === 'effects' || activeTextTab === 'text') && (
+              <>
+                {/* BACKGROUND BOX */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-200">Background Box</span>
+                    <input
+                      type="checkbox"
+                      checked={currentText.backgroundEnabled ?? false}
+                      onChange={(e) => {
+                        pushHistory();
+                        updateClipText(selectedClip!.id, { backgroundEnabled: e.target.checked });
+                      }}
+                      className="accent-cyan-400 w-4 h-4 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {currentText.backgroundEnabled && (
+                    <div className="space-y-3 pt-1 border-t border-dark-800">
+                      {/* Presets */}
+                      <div className="flex items-center space-x-1 overflow-x-auto no-scrollbar">
+                        {(['none', 'solid', 'rounded', 'pill', 'highlight', 'label'] as const).map((preset) => (
+                          <button
+                            key={preset}
+                            onClick={() => {
+                              pushHistory();
+                              updateClipText(selectedClip!.id, { backgroundPreset: preset });
+                            }}
+                            className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition ${
+                              currentText.backgroundPreset === preset ? 'bg-cyan-500 text-black font-black' : 'bg-dark-950 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Color & Radius */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-gray-400">Box Color</span>
+                        <input
+                          type="color"
+                          value={currentText.backgroundColor === 'transparent' ? '#000000' : currentText.backgroundColor}
+                          onChange={(e) => updateClipText(selectedClip!.id, { backgroundColor: e.target.value })}
+                          className="w-6 h-6 rounded cursor-pointer border border-dark-700 bg-transparent"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* OUTLINE / STROKE */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-200">Outline Stroke</span>
+                    <input
+                      type="checkbox"
+                      checked={currentText.outlineEnabled ?? false}
+                      onChange={(e) => {
+                        pushHistory();
+                        updateClipText(selectedClip!.id, { outlineEnabled: e.target.checked });
+                      }}
+                      className="accent-cyan-400 w-4 h-4 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {currentText.outlineEnabled && (
+                    <div className="space-y-3 pt-1 border-t border-dark-800">
+                      {/* Width Presets */}
+                      <div className="flex items-center space-x-1">
+                        {(['thin', 'medium', 'heavy'] as const).map((preset) => (
+                          <button
+                            key={preset}
+                            onClick={() => {
+                              pushHistory();
+                              updateClipText(selectedClip!.id, { outlinePreset: preset });
+                            }}
+                            className={`flex-1 py-1 rounded text-[10px] font-bold uppercase transition ${
+                              currentText.outlinePreset === preset ? 'bg-cyan-500 text-black font-black' : 'bg-dark-950 text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-gray-400">Stroke Color</span>
+                        <input
+                          type="color"
+                          value={currentText.outlineColor || '#000000'}
+                          onChange={(e) => updateClipText(selectedClip!.id, { outlineColor: e.target.value })}
+                          className="w-6 h-6 rounded cursor-pointer border border-dark-700 bg-transparent"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* DROP SHADOW */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-200">Drop Shadow</span>
+                    <input
+                      type="checkbox"
+                      checked={currentText.shadowEnabled ?? false}
+                      onChange={(e) => {
+                        pushHistory();
+                        updateClipText(selectedClip!.id, { shadowEnabled: e.target.checked });
+                      }}
+                      className="accent-cyan-400 w-4 h-4 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {currentText.shadowEnabled && (
+                    <div className="space-y-2 pt-1 border-t border-dark-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-gray-400">Shadow Color</span>
+                        <input
+                          type="color"
+                          value={currentText.shadowColor || '#000000'}
+                          onChange={(e) => updateClipText(selectedClip!.id, { shadowColor: e.target.value })}
+                          className="w-6 h-6 rounded cursor-pointer border border-dark-700 bg-transparent"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* TEXT GLOW */}
+                <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-200">Text Glow Effect</span>
+                    <input
+                      type="checkbox"
+                      checked={currentText.glowEnabled ?? false}
+                      onChange={(e) => {
+                        pushHistory();
+                        updateClipText(selectedClip!.id, { glowEnabled: e.target.checked });
+                      }}
+                      className="accent-cyan-400 w-4 h-4 rounded cursor-pointer"
+                    />
+                  </div>
+
+                  {currentText.glowEnabled && (
+                    <div className="space-y-3 pt-1 border-t border-dark-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-gray-400">Glow Color</span>
+                        <input
+                          type="color"
+                          value={currentText.glowColor || '#00f2fe'}
+                          onChange={(e) => updateClipText(selectedClip!.id, { glowColor: e.target.value })}
+                          className="w-6 h-6 rounded cursor-pointer border border-dark-700 bg-transparent"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* TAB 4: 18 VISUAL TEXT PRESET CARDS */}
+            {(activeTextTab === 'presets' || activeTextTab === 'text') && (
+              <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-2">
                 <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block flex items-center space-x-1">
-                  <SparklesIcon className="w-3 h-3" />
-                  <span>Text Style Presets</span>
+                  <SparklesIcon className="w-3.5 h-3.5" />
+                  <span>18 VISUAL TEXT STYLE PRESETS</span>
                 </span>
-                <div className="grid grid-cols-4 gap-1">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   {Object.entries(TEXT_PRESETS).map(([key, val]) => (
                     <button
                       key={key}
                       onClick={() => handleApplyTextPreset(key)}
-                      className="py-1 px-1 bg-dark-900 hover:bg-dark-800 border border-dark-700 hover:border-cyan-500 text-[9px] font-bold text-gray-200 rounded-lg text-center truncate"
+                      className={`p-2.5 rounded-xl border text-left transition transform hover:scale-[1.02] flex flex-col justify-between h-16 ${
+                        currentText.presetKey === key
+                          ? 'border-cyan-400 bg-cyan-950/40 ring-1 ring-cyan-400'
+                          : 'border-dark-700 bg-dark-950 hover:border-cyan-500/50'
+                      }`}
                     >
-                      {val.name}
+                      <span className="text-[10px] font-extrabold text-cyan-300 truncate">{val.name}</span>
+                      <span
+                        className="text-xs truncate font-bold"
+                        style={{
+                          fontFamily: val.style.fontFamily || 'sans-serif',
+                          color: val.style.color || '#fff',
+                        }}
+                      >
+                        Sample Text
+                      </span>
                     </button>
                   ))}
                 </div>
               </div>
-
-              {/* 4. Background Box Settings */}
-              <div className="p-2.5 bg-dark-800/80 border border-dark-700 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-200">Background Box</span>
-                  <input
-                    type="checkbox"
-                    checked={currentText.backgroundEnabled ?? true}
-                    onChange={(e) => {
-                      pushHistory();
-                      updateClipText(selectedClip!.id, { backgroundEnabled: e.target.checked });
-                    }}
-                    className="accent-cyan-400 w-4 h-4 rounded cursor-pointer"
-                  />
-                </div>
-                {currentText.backgroundEnabled && (
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-gray-400">Box Color</span>
-                      <input
-                        type="color"
-                        value={currentText.backgroundColor === 'transparent' ? '#000000' : currentText.backgroundColor}
-                        onChange={(e) => updateClipText(selectedClip!.id, { backgroundColor: e.target.value })}
-                        className="w-5 h-5 rounded cursor-pointer border border-dark-700 bg-transparent"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                        Corner Radius ({currentText.borderRadius || 8}px)
-                      </span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="30"
-                        value={currentText.borderRadius || 8}
-                        onChange={(e) => updateClipText(selectedClip!.id, { borderRadius: parseInt(e.target.value, 10) })}
-                        className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 5. Outline Settings */}
-              <div className="p-2.5 bg-dark-800/80 border border-dark-700 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-200">Outline Stroke</span>
-                  <input
-                    type="checkbox"
-                    checked={currentText.outlineEnabled ?? false}
-                    onChange={(e) => {
-                      pushHistory();
-                      updateClipText(selectedClip!.id, { outlineEnabled: e.target.checked });
-                    }}
-                    className="accent-cyan-400 w-4 h-4 rounded cursor-pointer"
-                  />
-                </div>
-                {currentText.outlineEnabled && (
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-gray-400">Outline Color</span>
-                      <input
-                        type="color"
-                        value={currentText.outlineColor || '#000000'}
-                        onChange={(e) => updateClipText(selectedClip!.id, { outlineColor: e.target.value })}
-                        className="w-5 h-5 rounded cursor-pointer border border-dark-700 bg-transparent"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                        Width ({currentText.outlineWidth || 2}px)
-                      </span>
-                      <input
-                        type="range"
-                        min="1"
-                        max="20"
-                        value={currentText.outlineWidth || 2}
-                        onChange={(e) => updateClipText(selectedClip!.id, { outlineWidth: parseInt(e.target.value, 10) })}
-                        className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 6. Drop Shadow Settings */}
-              <div className="p-2.5 bg-dark-800/80 border border-dark-700 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-200">Drop Shadow</span>
-                  <input
-                    type="checkbox"
-                    checked={currentText.shadowEnabled ?? false}
-                    onChange={(e) => {
-                      pushHistory();
-                      updateClipText(selectedClip!.id, { shadowEnabled: e.target.checked });
-                    }}
-                    className="accent-cyan-400 w-4 h-4 rounded cursor-pointer"
-                  />
-                </div>
-                {currentText.shadowEnabled && (
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-semibold text-gray-400">Shadow Color</span>
-                      <input
-                        type="color"
-                        value={currentText.shadowColor || '#000000'}
-                        onChange={(e) => updateClipText(selectedClip!.id, { shadowColor: e.target.value })}
-                        className="w-5 h-5 rounded cursor-pointer border border-dark-700 bg-transparent"
-                      />
-                    </div>
-                    <div>
-                      <span className="text-[10px] font-semibold text-gray-400 block mb-1">
-                        Blur ({currentText.shadowBlur || 10}px)
-                      </span>
-                      <input
-                        type="range"
-                        min="0"
-                        max="50"
-                        value={currentText.shadowBlur || 10}
-                        onChange={(e) => updateClipText(selectedClip!.id, { shadowBlur: parseInt(e.target.value, 10) })}
-                        className="w-full accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* 7. Copy / Paste Style */}
-              <div className="flex items-center space-x-2 pt-1">
-                <button
-                  onClick={copySelectedClipTextStyle}
-                  className="flex-1 py-1.5 bg-dark-800 hover:bg-dark-700 text-gray-200 border border-dark-700 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1"
-                >
-                  <Copy className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Copy Style</span>
-                </button>
-                <button
-                  onClick={pasteSelectedClipTextStyle}
-                  disabled={!copiedTextStyle}
-                  className="flex-1 py-1.5 bg-dark-800 hover:bg-dark-700 text-gray-200 border border-dark-700 disabled:opacity-40 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1"
-                >
-                  <CheckCircle className="w-3.5 h-3.5 text-green-400" />
-                  <span>Paste Style</span>
-                </button>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Play, Pause, Grid, RotateCcw, Maximize2 } from 'lucide-react';
+import { Play, Pause, Grid, RotateCcw, Maximize2, Type, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip } from '../types/timeline';
 import { renderTransitionEffect, findPreviousClipOnSameTrack } from '../utils/transitionEngine';
@@ -376,6 +376,133 @@ export const PreviewPlayer: React.FC = () => {
         style={{ width: `${width}px`, height: `${height}px` }}
       >
         <canvas ref={canvasRef} width={width} height={height} className="block cursor-pointer" />
+
+        {/* Floating Canvas Mini-Toolbar for Selected Text Clip */}
+        {selectedClip && selectedClip.type === 'text' && (
+          <div className="absolute top-3 left-3 flex items-center space-x-1.5 bg-dark-900/90 backdrop-blur-md px-3 py-1.5 rounded-2xl border border-cyan-500/40 shadow-2xl z-20 text-xs">
+            {/* Font Select */}
+            <select
+              value={selectedClip.text?.fontFamily || 'Inter, sans-serif'}
+              onChange={(e) => {
+                useTimelineStore.getState().pushHistory();
+                updateClipText(selectedClip!.id, { fontFamily: e.target.value });
+              }}
+              className="bg-dark-800 border border-dark-700 text-white rounded-lg px-2 py-1 text-xs outline-none focus:border-cyan-400 cursor-pointer font-medium max-w-[110px] truncate"
+            >
+              {['Inter, sans-serif', 'Poppins, sans-serif', 'Roboto, sans-serif', 'Montserrat, sans-serif', 'Arial, sans-serif', 'Georgia, serif', 'Courier New, monospace', 'Impact, sans-serif', 'Bebas Neue, sans-serif'].map((font) => (
+                <option key={font} value={font}>
+                  {font.split(',')[0]}
+                </option>
+              ))}
+            </select>
+
+            <div className="h-4 w-px bg-dark-700" />
+
+            {/* Font Size Stepper */}
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => {
+                  useTimelineStore.getState().pushHistory();
+                  const sz = Math.max(8, (selectedClip!.text?.fontSize || 48) - 4);
+                  updateClipText(selectedClip!.id, { fontSize: sz });
+                }}
+                className="w-5 h-5 rounded bg-dark-800 hover:bg-dark-700 text-gray-300 font-bold text-xs flex items-center justify-center"
+                title="Decrease Size"
+              >
+                -
+              </button>
+              <span className="font-mono text-cyan-300 font-bold text-xs w-6 text-center">
+                {selectedClip.text?.fontSize || 48}
+              </span>
+              <button
+                onClick={() => {
+                  useTimelineStore.getState().pushHistory();
+                  const sz = Math.min(300, (selectedClip!.text?.fontSize || 48) + 4);
+                  updateClipText(selectedClip!.id, { fontSize: sz });
+                }}
+                className="w-5 h-5 rounded bg-dark-800 hover:bg-dark-700 text-gray-300 font-bold text-xs flex items-center justify-center"
+                title="Increase Size"
+              >
+                +
+              </button>
+            </div>
+
+            <div className="h-4 w-px bg-dark-700" />
+
+            {/* Bold B */}
+            <button
+              onClick={() => {
+                useTimelineStore.getState().pushHistory();
+                updateClipText(selectedClip!.id, { bold: !(selectedClip!.text?.bold) });
+              }}
+              className={`w-6 h-6 rounded transition font-extrabold text-xs flex items-center justify-center ${
+                selectedClip.text?.bold ? 'bg-cyan-500 text-black font-extrabold' : 'text-gray-400 hover:text-white'
+              }`}
+              title="Toggle Bold"
+            >
+              B
+            </button>
+
+            {/* Italic I */}
+            <button
+              onClick={() => {
+                useTimelineStore.getState().pushHistory();
+                updateClipText(selectedClip!.id, { italic: !(selectedClip!.text?.italic) });
+              }}
+              className={`w-6 h-6 rounded transition italic font-bold text-xs flex items-center justify-center ${
+                selectedClip.text?.italic ? 'bg-cyan-500 text-black font-bold' : 'text-gray-400 hover:text-white'
+              }`}
+              title="Toggle Italic"
+            >
+              I
+            </button>
+
+            {/* Underline U */}
+            <button
+              onClick={() => {
+                useTimelineStore.getState().pushHistory();
+                updateClipText(selectedClip!.id, { underline: !(selectedClip!.text?.underline) });
+              }}
+              className={`w-6 h-6 rounded transition underline font-bold text-xs flex items-center justify-center ${
+                selectedClip.text?.underline ? 'bg-cyan-500 text-black font-bold' : 'text-gray-400 hover:text-white'
+              }`}
+              title="Toggle Underline"
+            >
+              U
+            </button>
+
+            <div className="h-4 w-px bg-dark-700" />
+
+            {/* Text Color Picker */}
+            <div className="relative w-5 h-5 rounded overflow-hidden border border-dark-600 cursor-pointer flex items-center justify-center" title="Text Color">
+              <input
+                type="color"
+                value={selectedClip.text?.color || '#ffffff'}
+                onChange={(e) => {
+                  updateClipText(selectedClip!.id, { color: e.target.value });
+                }}
+                onMouseDown={() => useTimelineStore.getState().pushHistory()}
+                className="absolute -inset-2 w-8 h-8 cursor-pointer border-0 bg-transparent"
+              />
+            </div>
+
+            <div className="h-4 w-px bg-dark-700" />
+
+            {/* Alignment Select */}
+            <button
+              onClick={() => {
+                useTimelineStore.getState().pushHistory();
+                const currentAlign = selectedClip!.text?.alignment || 'center';
+                const nextAlign = currentAlign === 'left' ? 'center' : currentAlign === 'center' ? 'right' : 'left';
+                updateClipText(selectedClip!.id, { alignment: nextAlign });
+              }}
+              className="px-2 py-0.5 rounded bg-dark-800 hover:bg-dark-700 text-cyan-300 font-bold text-[11px] uppercase tracking-wider"
+              title="Toggle Alignment (Left/Center/Right)"
+            >
+              {selectedClip.text?.alignment || 'center'}
+            </button>
+          </div>
+        )}
 
         {/* Active Overlay Text Editor Input Box */}
         {selectedClip && selectedClip.type === 'text' && editingTextClipId === selectedClip.id && (

@@ -159,6 +159,7 @@ interface TimelineState {
   pasteClipAtPlayhead: () => void;
   copySelectedClipTextStyle: () => void;
   pasteSelectedClipTextStyle: () => void;
+  resetSelectedClipTextStyle: () => void;
 
   beginTransaction: () => void;
   commitTransaction: () => void;
@@ -858,6 +859,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
     if (!selectedClipId || !copiedTextStyle) return;
     pushHistory();
     updateClipText(selectedClipId, copiedTextStyle);
+  },
+
+  resetSelectedClipTextStyle: () => {
+    const { selectedClipId, updateClipText, pushHistory } = get();
+    if (!selectedClipId) return;
+    pushHistory();
+    updateClipText(selectedClipId, {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 48,
+      color: '#ffffff',
+      backgroundColor: 'transparent',
+      borderColor: '#000000',
+      borderWidth: 0,
+      alignment: 'center',
+      bold: true,
+      italic: false,
+      underline: false,
+      strikethrough: false,
+      textTransform: 'none',
+      fillType: 'solid',
+      letterSpacing: 0,
+      lineHeight: 1.2,
+      backgroundEnabled: false,
+      outlineEnabled: false,
+      shadowEnabled: false,
+      glowEnabled: false,
+    });
   },
 
   beginTransaction: () => {

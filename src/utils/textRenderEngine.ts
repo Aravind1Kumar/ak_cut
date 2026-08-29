@@ -13,6 +13,9 @@ export const TEXT_PRESETS: Record<
       bold: true,
       italic: false,
       alignment: 'center',
+      fillType: 'gradient',
+      gradientColorStop2: '#00f2fe',
+      gradientAngle: 90,
       backgroundEnabled: false,
       outlineEnabled: true,
       outlineColor: '#000000',
@@ -35,9 +38,10 @@ export const TEXT_PRESETS: Record<
       alignment: 'center',
       backgroundEnabled: true,
       backgroundColor: '#000000',
-      backgroundOpacity: 0.75,
+      backgroundOpacity: 0.8,
       backgroundPadding: 12,
-      borderRadius: 8,
+      borderRadius: 16,
+      backgroundPreset: 'pill',
       outlineEnabled: false,
       shadowEnabled: false,
     },
@@ -57,6 +61,7 @@ export const TEXT_PRESETS: Record<
       backgroundOpacity: 0.9,
       backgroundPadding: 16,
       borderRadius: 4,
+      backgroundPreset: 'label',
       outlineEnabled: false,
       shadowEnabled: true,
       shadowColor: 'rgba(0,0,0,0.5)',
@@ -79,6 +84,7 @@ export const TEXT_PRESETS: Record<
       backgroundOpacity: 0.85,
       backgroundPadding: 14,
       borderRadius: 12,
+      backgroundPreset: 'rounded',
       outlineEnabled: true,
       outlineColor: '#000000',
       outlineWidth: 3,
@@ -97,6 +103,7 @@ export const TEXT_PRESETS: Record<
       color: '#ffffff',
       bold: true,
       italic: false,
+      textTransform: 'uppercase',
       alignment: 'center',
       backgroundEnabled: false,
       outlineEnabled: true,
@@ -132,15 +139,14 @@ export const TEXT_PRESETS: Record<
       bold: true,
       italic: false,
       alignment: 'center',
+      glowEnabled: true,
+      glowColor: '#38bdf8',
+      glowBlur: 30,
+      glowIntensity: 1.0,
       backgroundEnabled: false,
       outlineEnabled: true,
       outlineColor: '#0284c7',
       outlineWidth: 2,
-      shadowEnabled: true,
-      shadowColor: '#38bdf8',
-      shadowBlur: 25,
-      shadowOffsetX: 0,
-      shadowOffsetY: 0,
     },
   },
   outline: {
@@ -159,7 +165,199 @@ export const TEXT_PRESETS: Record<
       shadowEnabled: false,
     },
   },
+  breakingNews: {
+    name: 'BREAKING NEWS',
+    style: {
+      fontFamily: 'Roboto, sans-serif',
+      fontSize: 48,
+      color: '#ffffff',
+      bold: true,
+      italic: false,
+      textTransform: 'uppercase',
+      alignment: 'center',
+      backgroundEnabled: true,
+      backgroundColor: '#dc2626',
+      backgroundOpacity: 0.95,
+      backgroundPadding: 16,
+      borderRadius: 4,
+      backgroundPreset: 'label',
+      outlineEnabled: false,
+    },
+  },
+  youtubeTitle: {
+    name: 'YOUTUBE TITLE',
+    style: {
+      fontFamily: 'Montserrat, sans-serif',
+      fontSize: 72,
+      color: '#eab308',
+      bold: true,
+      italic: false,
+      alignment: 'center',
+      outlineEnabled: true,
+      outlineColor: '#000000',
+      outlineWidth: 6,
+      shadowEnabled: true,
+      shadowColor: 'rgba(0,0,0,0.9)',
+      shadowBlur: 16,
+      shadowOffsetX: 4,
+      shadowOffsetY: 6,
+    },
+  },
+  instagram: {
+    name: 'INSTAGRAM',
+    style: {
+      fontFamily: 'Poppins, sans-serif',
+      fontSize: 54,
+      color: '#ffffff',
+      bold: true,
+      italic: false,
+      alignment: 'center',
+      backgroundEnabled: true,
+      backgroundColor: '#831843',
+      backgroundOpacity: 0.9,
+      backgroundPadding: 14,
+      borderRadius: 24,
+      backgroundPreset: 'pill',
+    },
+  },
+  tiktok: {
+    name: 'TIKTOK',
+    style: {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 60,
+      color: '#ffffff',
+      bold: true,
+      italic: false,
+      alignment: 'center',
+      outlineEnabled: true,
+      outlineColor: '#000000',
+      outlineWidth: 4,
+      shadowEnabled: true,
+      shadowColor: '#2563eb',
+      shadowBlur: 12,
+      shadowOffsetX: 4,
+      shadowOffsetY: 4,
+    },
+  },
+  cinematic: {
+    name: 'CINEMATIC',
+    style: {
+      fontFamily: 'Georgia, serif',
+      fontSize: 48,
+      color: '#fef08a',
+      bold: false,
+      italic: true,
+      alignment: 'center',
+      letterSpacing: 4,
+      shadowEnabled: true,
+      shadowColor: 'rgba(0,0,0,0.8)',
+      shadowBlur: 14,
+      shadowOffsetX: 0,
+      shadowOffsetY: 4,
+    },
+  },
+  sports: {
+    name: 'SPORTS',
+    style: {
+      fontFamily: 'Impact, sans-serif',
+      fontSize: 76,
+      color: '#fbbf24',
+      bold: true,
+      italic: true,
+      textTransform: 'uppercase',
+      alignment: 'center',
+      outlineEnabled: true,
+      outlineColor: '#000000',
+      outlineWidth: 6,
+      shadowEnabled: true,
+      shadowColor: 'rgba(0,0,0,0.9)',
+      shadowBlur: 10,
+      shadowOffsetX: 6,
+      shadowOffsetY: 6,
+    },
+  },
+  gaming: {
+    name: 'GAMING',
+    style: {
+      fontFamily: 'Bebas Neue, sans-serif',
+      fontSize: 80,
+      color: '#22c55e',
+      bold: true,
+      italic: false,
+      textTransform: 'uppercase',
+      alignment: 'center',
+      glowEnabled: true,
+      glowColor: '#22c55e',
+      glowBlur: 35,
+      glowIntensity: 1.0,
+      outlineEnabled: true,
+      outlineColor: '#052e16',
+      outlineWidth: 3,
+    },
+  },
+  quote: {
+    name: 'QUOTE',
+    style: {
+      fontFamily: 'Playfair Display, serif',
+      fontSize: 44,
+      color: '#ffffff',
+      bold: false,
+      italic: true,
+      alignment: 'center',
+      backgroundEnabled: true,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      backgroundOpacity: 0.6,
+      backgroundPadding: 16,
+      borderRadius: 12,
+    },
+  },
+  location: {
+    name: 'LOCATION',
+    style: {
+      fontFamily: 'Montserrat, sans-serif',
+      fontSize: 32,
+      color: '#38bdf8',
+      bold: true,
+      italic: false,
+      textTransform: 'uppercase',
+      alignment: 'center',
+      letterSpacing: 3,
+      backgroundEnabled: true,
+      backgroundColor: '#0f172a',
+      backgroundOpacity: 0.9,
+      backgroundPadding: 10,
+      borderRadius: 20,
+      backgroundPreset: 'pill',
+    },
+  },
+  nameTag: {
+    name: 'NAME TAG',
+    style: {
+      fontFamily: 'Inter, sans-serif',
+      fontSize: 36,
+      color: '#ffffff',
+      bold: true,
+      italic: false,
+      alignment: 'left',
+      backgroundEnabled: true,
+      backgroundColor: '#2563eb',
+      backgroundOpacity: 0.95,
+      backgroundPadding: 14,
+      borderRadius: 8,
+      backgroundPreset: 'label',
+    },
+  },
 };
+
+export function transformTextContent(text: string, transformType?: string): string {
+  if (!text) return '';
+  if (transformType === 'uppercase') return text.toUpperCase();
+  if (transformType === 'lowercase') return text.toLowerCase();
+  if (transformType === 'titlecase') {
+    return text.replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  }
+  return text;
+}
 
 export function renderTextClipOnCanvas(
   ctx: CanvasRenderingContext2D,
@@ -168,8 +366,8 @@ export function renderTextClipOnCanvas(
   canvasWidth: number,
   canvasHeight: number
 ): void {
-  const text = clip.text;
-  if (!text || !text.content) return;
+  const textProps = clip.text;
+  if (!textProps || !textProps.content) return;
 
   ctx.save();
 
@@ -183,40 +381,33 @@ export function renderTextClipOnCanvas(
   const animDuration = 0.5;
   const progress = Math.min(1.0, Math.max(0.0, relativeTime / animDuration));
 
-  if (text.animation === 'fadeIn') {
+  if (textProps.animation === 'fadeIn') {
     animOpacity = progress;
-  } else if (text.animation === 'fadeOut') {
+  } else if (textProps.animation === 'fadeOut') {
     const endProgress = Math.min(1.0, Math.max(0.0, (clip.duration - relativeTime) / animDuration));
     animOpacity = endProgress;
-  } else if (text.animation === 'pop' || text.animation === 'scaleIn') {
+  } else if (textProps.animation === 'pop' || textProps.animation === 'scaleIn') {
     animOpacity = progress;
     animScaleX = 0.3 + 0.7 * progress;
     animScaleY = 0.3 + 0.7 * progress;
-  } else if (text.animation === 'scaleOut') {
+  } else if (textProps.animation === 'scaleOut') {
     const endProgress = Math.min(1.0, Math.max(0.0, (clip.duration - relativeTime) / animDuration));
     animOpacity = endProgress;
     animScaleX = 0.3 + 0.7 * endProgress;
     animScaleY = 0.3 + 0.7 * endProgress;
-  } else if (text.animation === 'slideLeft') {
+  } else if (textProps.animation === 'slideLeft') {
     animOpacity = progress;
     animOffsetX = (1 - progress) * 100;
-  } else if (text.animation === 'slideRight') {
+  } else if (textProps.animation === 'slideRight') {
     animOpacity = progress;
     animOffsetX = -(1 - progress) * 100;
-  } else if (text.animation === 'slideUp') {
+  } else if (textProps.animation === 'slideUp') {
     animOpacity = progress;
     animOffsetY = (1 - progress) * 80;
-  } else if (text.animation === 'slideDown') {
+  } else if (textProps.animation === 'slideDown') {
     animOpacity = progress;
     animOffsetY = -(1 - progress) * 80;
-  } else if (text.animation === 'typewriter') {
-    const totalChars = text.content.length;
-    const charsToShow = Math.floor(progress * totalChars);
-    if (charsToShow < totalChars) {
-      // Modify text temporarily for typewriter
-      text.content = text.content.substring(0, charsToShow);
-    }
-  } else if (text.animation === 'bounce') {
+  } else if (textProps.animation === 'bounce') {
     animOffsetY = Math.sin(progress * Math.PI) * -30;
   }
 
@@ -224,17 +415,27 @@ export function renderTextClipOnCanvas(
   ctx.translate(animOffsetX, animOffsetY);
   ctx.scale(animScaleX, animScaleY);
 
-  const fontSize = text.fontSize || 44;
-  const fontFamily = text.fontFamily || 'Inter, sans-serif';
-  const fontStyle = `${text.italic ? 'italic ' : ''}${text.bold ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
-  ctx.font = fontStyle;
+  const rawContent = textProps.content;
+  const transformedContent = transformTextContent(rawContent, textProps.textTransform);
 
-  if (text.letterSpacing && (ctx as any).letterSpacing !== undefined) {
-    (ctx as any).letterSpacing = `${text.letterSpacing}px`;
+  let displayContent = transformedContent;
+  if (textProps.animation === 'typewriter') {
+    const totalChars = transformedContent.length;
+    const charsToShow = Math.floor(progress * totalChars);
+    displayContent = transformedContent.substring(0, charsToShow);
   }
 
-  const lines = text.content.split('\n');
-  const lineHeight = (text.lineHeight || 1.2) * fontSize;
+  const fontSize = textProps.fontSize || 48;
+  const fontFamily = textProps.fontFamily || 'Inter, sans-serif';
+  const fontStyle = `${textProps.italic ? 'italic ' : ''}${textProps.bold ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+  ctx.font = fontStyle;
+
+  if (textProps.letterSpacing && (ctx as any).letterSpacing !== undefined) {
+    (ctx as any).letterSpacing = `${textProps.letterSpacing}px`;
+  }
+
+  const lines = displayContent.split('\n');
+  const lineHeight = (textProps.lineHeight || 1.2) * fontSize;
 
   // Measure text bounding box
   let maxLineWidth = 0;
@@ -246,20 +447,28 @@ export function renderTextClipOnCanvas(
   });
 
   const totalTextHeight = lines.length * lineHeight;
-  const padding = text.backgroundPadding ?? 16;
+  const padding = textProps.backgroundPadding ?? 16;
   const bgWidth = maxLineWidth + padding * 2;
   const bgHeight = totalTextHeight + padding * 2;
 
-  // Background Box
-  const isBgEnabled = text.backgroundEnabled ?? (text.backgroundColor && text.backgroundColor !== 'transparent');
-  if (isBgEnabled && text.backgroundColor) {
+  // Background Box Rendering
+  const isBgEnabled = textProps.backgroundEnabled ?? (textProps.backgroundColor && textProps.backgroundColor !== 'transparent');
+  if (isBgEnabled && textProps.backgroundColor) {
     ctx.save();
-    ctx.fillStyle = text.backgroundColor;
-    ctx.globalAlpha = ctx.globalAlpha * (text.backgroundOpacity ?? 0.8);
+    ctx.fillStyle = textProps.backgroundColor;
+    ctx.globalAlpha = ctx.globalAlpha * (textProps.backgroundOpacity ?? 0.8);
 
     const bgX = -bgWidth / 2;
     const bgY = -bgHeight / 2;
-    const radius = text.borderRadius || 8;
+
+    let radius = textProps.borderRadius || 8;
+    if (textProps.backgroundPreset === 'pill') {
+      radius = Math.min(bgWidth, bgHeight) / 2;
+    } else if (textProps.backgroundPreset === 'solid') {
+      radius = 0;
+    } else if (textProps.backgroundPreset === 'rounded') {
+      radius = 12;
+    }
 
     ctx.beginPath();
     ctx.roundRect(bgX, bgY, bgWidth, bgHeight, radius);
@@ -267,54 +476,102 @@ export function renderTextClipOnCanvas(
     ctx.restore();
   }
 
-  // Text Shadow
-  if (text.shadowEnabled) {
-    ctx.shadowColor = text.shadowColor || 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = text.shadowBlur ?? 10;
-    ctx.shadowOffsetX = text.shadowOffsetX ?? 2;
-    ctx.shadowOffsetY = text.shadowOffsetY ?? 4;
+  // Text Glow Effect
+  if (textProps.glowEnabled) {
+    ctx.shadowColor = textProps.glowColor || '#00f2fe';
+    ctx.shadowBlur = textProps.glowBlur ?? 30;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+  } else if (textProps.shadowEnabled) {
+    ctx.shadowColor = textProps.shadowColor || 'rgba(0,0,0,0.8)';
+    ctx.shadowBlur = textProps.shadowBlur ?? 10;
+    ctx.shadowOffsetX = textProps.shadowOffsetX ?? 2;
+    ctx.shadowOffsetY = textProps.shadowOffsetY ?? 4;
   } else {
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
   }
 
   // Render text lines
-  ctx.textAlign = text.alignment || 'center';
+  let align = textProps.alignment || 'center';
+  if (align === 'justify') align = 'center';
+  ctx.textAlign = align as CanvasTextAlign;
   ctx.textBaseline = 'middle';
 
   const startY = -((lines.length - 1) * lineHeight) / 2;
+
+  // Create Fill Style (Solid vs Gradient)
+  let textFillStyle: string | CanvasGradient = textProps.color || '#ffffff';
+  if (textProps.fillType === 'gradient' && textProps.gradientColorStop2) {
+    const angleRad = ((textProps.gradientAngle || 90) * Math.PI) / 180;
+    const halfW = maxLineWidth / 2;
+    const halfH = totalTextHeight / 2;
+    const x0 = -Math.cos(angleRad) * halfW;
+    const y0 = -Math.sin(angleRad) * halfH;
+    const x1 = Math.cos(angleRad) * halfW;
+    const y1 = Math.sin(angleRad) * halfH;
+
+    const grad = ctx.createLinearGradient(x0, y0, x1, y1);
+    grad.addColorStop(0, textProps.color || '#ffffff');
+    grad.addColorStop(1, textProps.gradientColorStop2);
+    textFillStyle = grad;
+  }
 
   lines.forEach((line, idx) => {
     const lineY = startY + idx * lineHeight;
 
     // Stroke / Outline
-    const isOutlineEnabled = text.outlineEnabled ?? (text.borderWidth && text.borderWidth > 0);
+    const isOutlineEnabled = textProps.outlineEnabled ?? (textProps.borderWidth && textProps.borderWidth > 0);
     if (isOutlineEnabled) {
-      ctx.strokeStyle = text.outlineColor || text.borderColor || '#000000';
-      ctx.lineWidth = (text.outlineWidth || text.borderWidth || 2) * 2;
+      let strokeWidth = textProps.outlineWidth || textProps.borderWidth || 2;
+      if (textProps.outlinePreset === 'thin') strokeWidth = 2;
+      else if (textProps.outlinePreset === 'medium') strokeWidth = 4;
+      else if (textProps.outlinePreset === 'heavy') strokeWidth = 8;
+
+      ctx.strokeStyle = textProps.outlineColor || textProps.borderColor || '#000000';
+      ctx.lineWidth = strokeWidth * 2;
       ctx.lineJoin = 'round';
       ctx.strokeText(line, 0, lineY);
     }
 
     // Fill Text
-    ctx.fillStyle = text.color || '#ffffff';
+    ctx.fillStyle = textFillStyle;
     ctx.fillText(line, 0, lineY);
 
     // Underline
-    if (text.underline) {
+    if (textProps.underline) {
       ctx.save();
       const m = ctx.measureText(line);
-      ctx.strokeStyle = text.color || '#ffffff';
+      ctx.strokeStyle = textFillStyle;
       ctx.lineWidth = Math.max(2, fontSize / 20);
 
       let lineStartX = -m.width / 2;
-      if (text.alignment === 'left') lineStartX = 0;
-      else if (text.alignment === 'right') lineStartX = -m.width;
+      if (align === 'left') lineStartX = 0;
+      else if (align === 'right') lineStartX = -m.width;
 
       const underlineY = lineY + fontSize * 0.4;
       ctx.beginPath();
       ctx.moveTo(lineStartX, underlineY);
       ctx.lineTo(lineStartX + m.width, underlineY);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Strikethrough
+    if (textProps.strikethrough) {
+      ctx.save();
+      const m = ctx.measureText(line);
+      ctx.strokeStyle = textFillStyle;
+      ctx.lineWidth = Math.max(2, fontSize / 22);
+
+      let lineStartX = -m.width / 2;
+      if (align === 'left') lineStartX = 0;
+      else if (align === 'right') lineStartX = -m.width;
+
+      const strikeY = lineY;
+      ctx.beginPath();
+      ctx.moveTo(lineStartX, strikeY);
+      ctx.lineTo(lineStartX + m.width, strikeY);
       ctx.stroke();
       ctx.restore();
     }
