@@ -524,6 +524,39 @@ export function renderTextClipOnCanvas(
     textFillStyle = grad;
   }
 
+  // Curved Arc Text Rendering (if arcAngle is set)
+  if (textProps.arcAngle && Math.abs(textProps.arcAngle) >= 2) {
+    const totalAngle = (textProps.arcAngle * Math.PI) / 180;
+    const chars = displayContent.replace(/\n/g, ' ').split('');
+    const radius = Math.max(80, (maxLineWidth * 1.2) / (Math.abs(totalAngle) || 0.1));
+    const anglePerChar = totalAngle / Math.max(1, chars.length - 1);
+    const startAngle = -totalAngle / 2;
+
+    const isOutlineEnabled = textProps.outlineEnabled ?? (textProps.borderWidth && textProps.borderWidth > 0);
+    let strokeWidth = textProps.outlineWidth || textProps.borderWidth || 2;
+
+    chars.forEach((ch, cIdx) => {
+      const charAngle = startAngle + cIdx * anglePerChar;
+      ctx.save();
+      ctx.rotate(charAngle);
+      ctx.translate(0, -radius);
+
+      if (isOutlineEnabled) {
+        ctx.strokeStyle = textProps.outlineColor || textProps.borderColor || '#000000';
+        ctx.lineWidth = strokeWidth * 2;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(ch, 0, 0);
+      }
+
+      ctx.fillStyle = textFillStyle;
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+    });
+
+    ctx.restore();
+    return;
+  }
+
   lines.forEach((line, idx) => {
     const lineY = startY + idx * lineHeight;
 

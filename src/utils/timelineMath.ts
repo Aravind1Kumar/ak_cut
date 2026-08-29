@@ -1,4 +1,4 @@
-import { Clip, TransformProps } from '../types/timeline';
+import { Clip, Track, TransformProps } from '../types/timeline';
 import { mapTimelineTimeToSourceTime } from './speedEngine';
 
 // Unified Source/Timeline Time Math function used across Preview, Exporter, Audio & Timeline actions
@@ -226,4 +226,55 @@ export function overwriteClip(clips: Clip[], newClip: Clip): Clip[] {
 
   result.push(newClip);
   return result.sort((a, b) => a.startTime - b.startTime);
+}
+
+/**
+ * Audio Ducking & Volume Envelope Engine:
+ * Computes exact volume (0.0 to 2.0) for a clip taking into account:
+ * 1. Base volume (0..200%)
+ * 2. Mute toggle
+ * 3. Fade In & Fade Out duration envelopes
+ * 4. Automatic Ducking reduction when speech/voiceover is active on another track
+ */
+export function getEffectiveAudioVolumeAtTime(
+  clip: Clip,
+  allTracks: Track[],
+  timelineTime: number
+): number {
+  const audio = clip.audio || { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false };
+  if (audio.muted) return 0;
+
+  let vol = audio.volume ?? 1.0;
+  const relTime = timelineTime - clip.startTime;
+
+  if (audio.fadeIn > 0 && relTime >= 0 && relTime < audio.fadeIn) {
+    vol *= relTime / audio.fadeIn;
+  }
+
+  const timeFromEnd = clip.startTime + clip.duration - timelineTime;
+  if (audio.fadeOut > 0 && timeFromEnd >= 0 && timeFromEnd < audio.fadeOut) {
+    vol *= timeFromEnd / audio.fadeOut;
+  }
+
+  if (audio.ducking?.enabled) {
+    const targetTrackId = audio.ducking.targetTrackId;
+    const duckingAmount = (audio.ducking.duckingAmount ?? 50) / 100;
+
+    let isSpeechActive = false;
+    allTracks.forEach((t) => {
+      if (!t.muted && (!targetTrackId || t.id === targetTrackId || t.name.toLowerCase().includes('voice'))) {
+        t.clips.forEach((otherClip: Clip) => {
+          if (otherClip.id !== clip.id && timelineTime >= otherClip.startTime && timelineTime <= otherClip.startTime + otherClip.duration) {
+            isSpeechActive = true;
+          }
+        });
+      }
+    });
+
+    if (isSpeechActive) {
+      vol *= (1 - duckingAmount);
+    }
+  }
+
+  return Math.max(0, Math.min(2.0, vol));
 }

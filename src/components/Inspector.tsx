@@ -66,6 +66,7 @@ import { normalizeClipAudioGain } from '../utils/audioNormalizeEngine';
 import { SPEED_CURVE_PRESETS } from '../utils/speedEngine';
 import { applyMotionPresetToClip, MotionPresetType } from '../utils/motionEngine';
 import { TEXT_PRESETS } from '../utils/textRenderEngine';
+import { FILTER_PRESETS } from '../utils/filterEngine';
 
 const SUPPORTED_FONTS = [
   'Inter, sans-serif',
@@ -846,6 +847,21 @@ export const Inspector: React.FC = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Curved Text Arc Slider */}
+                  <div className="pt-2 border-t border-dark-800">
+                    <span className="text-[10px] font-bold text-gray-400 block mb-1">CURVED TEXT ARC ({currentText.arcAngle || 0}°)</span>
+                    <input
+                      type="range"
+                      min="-180"
+                      max="180"
+                      step="5"
+                      value={currentText.arcAngle || 0}
+                      onChange={(e) => updateClipText(selectedClip!.id, { arcAngle: parseInt(e.target.value, 10) })}
+                      onMouseDown={() => pushHistory()}
+                      className="w-full accent-cyan-400 bg-dark-950 rounded-lg h-1.5 cursor-pointer"
+                    />
+                  </div>
                 </div>
               </>
             )}
@@ -1163,6 +1179,109 @@ export const Inspector: React.FC = () => {
         </div>
       )}
 
+      {/* FILTERS & COLOR ADJUSTMENTS SECTION */}
+      {(selectedClip.type === 'video' || selectedClip.type === 'image') && (
+        <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
+          <button
+            onClick={() => toggleSection('filter')}
+            className="w-full px-3 py-2.5 bg-dark-900/80 flex items-center justify-between text-xs font-bold text-gray-300 uppercase tracking-wider"
+          >
+            <span className="flex items-center space-x-1.5">
+              <Sliders className="w-4 h-4 text-cyan-400" />
+              <span>Filters & Adjustments</span>
+            </span>
+            {openSections.filter ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+
+          {openSections.filter && (
+            <div className="p-3 space-y-3">
+              {/* Filter Preset Selector */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">Filter Preset</span>
+                <select
+                  value={selectedClip.filter.presetKey || 'original'}
+                  onChange={(e) => {
+                    pushHistory();
+                    updateClipFilter(selectedClip!.id, { presetKey: e.target.value });
+                  }}
+                  className="w-full bg-dark-950 border border-dark-700 rounded-xl px-2.5 py-1.5 text-xs text-cyan-300 font-bold outline-none focus:border-cyan-400 cursor-pointer"
+                >
+                  {Object.entries(FILTER_PRESETS).map(([key, val]) => (
+                    <option key={key} value={key}>
+                      {val.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Master Preset Intensity Slider */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Master Filter Intensity ({selectedClip.filter.presetIntensity ?? 100}%)
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={selectedClip.filter.presetIntensity ?? 100}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { presetIntensity: parseInt(e.target.value, 10) })}
+                  onMouseDown={() => pushHistory()}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              {/* Temperature Slider */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Temperature ({selectedClip.filter.temperature || 0})
+                </span>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={selectedClip.filter.temperature || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { temperature: parseInt(e.target.value, 10) })}
+                  onMouseDown={() => pushHistory()}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              {/* Exposure Slider */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Exposure ({selectedClip.filter.exposure || 0})
+                </span>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={selectedClip.filter.exposure || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { exposure: parseInt(e.target.value, 10) })}
+                  onMouseDown={() => pushHistory()}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              {/* Vignette Slider */}
+              <div>
+                <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                  Vignette ({selectedClip.filter.vignette || 0}%)
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={selectedClip.filter.vignette || 0}
+                  onChange={(e) => updateClipFilter(selectedClip!.id, { vignette: parseInt(e.target.value, 10) })}
+                  onMouseDown={() => pushHistory()}
+                  className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TRANSFORM SECTION */}
       <div className="border border-dark-700 rounded-xl bg-dark-900/40 overflow-hidden">
         <button
@@ -1449,6 +1568,81 @@ export const Inspector: React.FC = () => {
                   onChange={(e) => updateClipAudio(selectedClip!.id, { volume: parseFloat(e.target.value) })}
                   className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
                 />
+              </div>
+
+              {/* Fade In & Fade Out */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <span className="text-[10px] font-semibold text-gray-400 block mb-1">Fade In ({selectedClip.audio.fadeIn || 0}s)</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5"
+                    step="0.1"
+                    value={selectedClip.audio.fadeIn || 0}
+                    onChange={(e) => updateClipAudio(selectedClip!.id, { fadeIn: parseFloat(e.target.value) })}
+                    onMouseDown={() => pushHistory()}
+                    className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold text-gray-400 block mb-1">Fade Out ({selectedClip.audio.fadeOut || 0}s)</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="5"
+                    step="0.1"
+                    value={selectedClip.audio.fadeOut || 0}
+                    onChange={(e) => updateClipAudio(selectedClip!.id, { fadeOut: parseFloat(e.target.value) })}
+                    onMouseDown={() => pushHistory()}
+                    className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Auto Ducking Toggle & Reduction Slider */}
+              <div className="p-2.5 bg-dark-900 border border-dark-800 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-200">Auto Audio Ducking</span>
+                  <input
+                    type="checkbox"
+                    checked={selectedClip.audio.ducking?.enabled ?? false}
+                    onChange={(e) => {
+                      pushHistory();
+                      updateClipAudio(selectedClip!.id, {
+                        ducking: {
+                          enabled: e.target.checked,
+                          duckingAmount: selectedClip.audio.ducking?.duckingAmount ?? 50,
+                        },
+                      });
+                    }}
+                    className="accent-green-400 w-4 h-4 rounded cursor-pointer"
+                  />
+                </div>
+                {selectedClip.audio.ducking?.enabled && (
+                  <div>
+                    <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                      Volume Reduction ({selectedClip.audio.ducking?.duckingAmount ?? 50}%)
+                    </span>
+                    <input
+                      type="range"
+                      min="10"
+                      max="90"
+                      step="5"
+                      value={selectedClip.audio.ducking?.duckingAmount ?? 50}
+                      onChange={(e) =>
+                        updateClipAudio(selectedClip!.id, {
+                          ducking: {
+                            enabled: true,
+                            duckingAmount: parseInt(e.target.value, 10),
+                          },
+                        })
+                      }
+                      onMouseDown={() => pushHistory()}
+                      className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}

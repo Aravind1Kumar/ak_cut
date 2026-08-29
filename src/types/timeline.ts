@@ -129,6 +129,7 @@ export interface TextProps {
   boxWidth?: number;          // px
   animation?: TextAnimationType;
   presetKey?: string;
+  arcAngle?: number;          // -180 to +180 deg (0 = straight)
 }
 
 export type ShapeType = 'rectangle' | 'roundedRectangle' | 'circle' | 'ellipse' | 'line' | 'triangle' | 'arrow' | 'star';

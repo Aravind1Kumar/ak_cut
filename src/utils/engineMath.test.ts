@@ -1,6 +1,6 @@
 ﻿import { Clip, Track } from '../types/timeline';
 import { mapTimelineTimeToSourceTime, SPEED_CURVE_PRESETS } from './speedEngine';
-import { slipClip, slideClip, rollEdit, insertClip, overwriteClip, getSourceTimeForTimelineTime, getInterpolatedTransformAtTime } from './timelineMath';
+import { slipClip, slideClip, rollEdit, insertClip, overwriteClip, getSourceTimeForTimelineTime, getInterpolatedTransformAtTime, getEffectiveAudioVolumeAtTime } from './timelineMath';
 import { useTimelineStore } from '../store/timelineStore';
 
 const mockClip: Clip = {
@@ -140,13 +140,44 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
     ],
   };
 
-  const kStart = getInterpolatedTransformAtTime(keyframeClip, 10);  // local 0s
-  const kMid = getInterpolatedTransformAtTime(keyframeClip, 15);    // local 5s
-  const kEnd = getInterpolatedTransformAtTime(keyframeClip, 20);    // local 10s
+  const kStart = getInterpolatedTransformAtTime(keyframeClip, 10);
+  const kMid = getInterpolatedTransformAtTime(keyframeClip, 15);
+  const kEnd = getInterpolatedTransformAtTime(keyframeClip, 20);
 
   const test10Pass = kStart.scale === 1.0 && kMid.scale === 1.5 && kMid.opacity === 0.5 && kEnd.scale === 2.0 && kEnd.opacity === 0.0;
   results.push(`Test 10 (Universal Keyframe Interpolation Engine): ${test10Pass ? 'PASS' : 'FAIL'} (Mid Scale: ${kMid.scale}, Mid Opacity: ${kMid.opacity})`);
 
-  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass && test10Pass;
+  // Test 11: Audio Ducking & Volume Envelope Math Engine
+  const musicClip: Clip = {
+    ...mockClip,
+    id: 'music1',
+    startTime: 0,
+    duration: 10,
+    audio: {
+      volume: 1.0,
+      fadeIn: 2.0,
+      fadeOut: 2.0,
+      muted: false,
+      ducking: { enabled: true, duckingAmount: 60, targetTrackId: 'voiceTrack' },
+    },
+  };
+  const voiceTrack: Track = {
+    id: 'voiceTrack',
+    name: 'Voiceover',
+    type: 'audio',
+    locked: false,
+    hidden: false,
+    muted: false,
+    clips: [{ ...mockClip, id: 'voice1', startTime: 4, duration: 4 }],
+  };
+
+  const fadeVol = getEffectiveAudioVolumeAtTime(musicClip, [voiceTrack], 1.0);  // 1s in fade in -> 0.5
+  const duckedVol = getEffectiveAudioVolumeAtTime(musicClip, [voiceTrack], 5.0); // at 5s speech active -> 1.0 * (1 - 0.6) = 0.4
+  const unduckedVol = getEffectiveAudioVolumeAtTime(musicClip, [voiceTrack], 9.0); // at 9s fade out -> 0.5
+
+  const test11Pass = Math.abs(fadeVol - 0.5) < 0.05 && Math.abs(duckedVol - 0.4) < 0.05 && Math.abs(unduckedVol - 0.5) < 0.05;
+  results.push(`Test 11 (Audio Ducking & Volume Envelope Engine): ${test11Pass ? 'PASS' : 'FAIL'} (Fade 1s: ${fadeVol.toFixed(2)}, Ducked 5s: ${duckedVol.toFixed(2)}, FadeOut 9s: ${unduckedVol.toFixed(2)})`);
+
+  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass && test10Pass && test11Pass;
   return { passed, results };
 }
