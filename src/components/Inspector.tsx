@@ -1600,6 +1600,55 @@ export const Inspector: React.FC = () => {
                 </div>
               </div>
 
+              {/* Stereo Pan Slider */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold text-gray-400">
+                    Stereo Balance / Pan ({selectedClip.audio.pan ? (selectedClip.audio.pan > 0 ? `R ${selectedClip.audio.pan}` : `L ${Math.abs(selectedClip.audio.pan)}`) : 'Center'})
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  step="5"
+                  value={selectedClip.audio.pan || 0}
+                  onChange={(e) => updateClipAudio(selectedClip!.id, { pan: parseInt(e.target.value, 10) })}
+                  onMouseDown={() => pushHistory()}
+                  className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                />
+              </div>
+
+              {/* Audio Equalizer Cutoff Controls */}
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-dark-800">
+                <div>
+                  <span className="text-[10px] font-semibold text-gray-400 block mb-1">Low-Pass Cutoff ({selectedClip.audio.lowPass || 20000} Hz)</span>
+                  <input
+                    type="range"
+                    min="500"
+                    max="20000"
+                    step="500"
+                    value={selectedClip.audio.lowPass || 20000}
+                    onChange={(e) => updateClipAudio(selectedClip!.id, { lowPass: parseInt(e.target.value, 10) })}
+                    onMouseDown={() => pushHistory()}
+                    className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] font-semibold text-gray-400 block mb-1">High-Pass Cutoff ({selectedClip.audio.highPass || 20} Hz)</span>
+                  <input
+                    type="range"
+                    min="20"
+                    max="5000"
+                    step="100"
+                    value={selectedClip.audio.highPass || 20}
+                    onChange={(e) => updateClipAudio(selectedClip!.id, { highPass: parseInt(e.target.value, 10) })}
+                    onMouseDown={() => pushHistory()}
+                    className="w-full accent-green-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+                  />
+                </div>
+              </div>
+
               {/* Auto Ducking Toggle & Reduction Slider */}
               <div className="p-2.5 bg-dark-900 border border-dark-800 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
