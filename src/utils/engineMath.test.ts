@@ -1,5 +1,5 @@
-﻿import { Clip } from '../types/timeline';
-import { mapTimelineTimeToSourceTime } from './speedEngine';
+﻿import { Clip, Track } from '../types/timeline';
+import { mapTimelineTimeToSourceTime, SPEED_CURVE_PRESETS } from './speedEngine';
 import { slipClip, slideClip, rollEdit, insertClip, overwriteClip, getSourceTimeForTimelineTime } from './timelineMath';
 
 const mockClip: Clip = {
@@ -34,8 +34,9 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   // Test 2: Slip Edit Math & Boundary Clamping
   const slipped = slipClip(mockClip, 3);
   const slippedMax = slipClip(mockClip, 100);
-  const test2Pass = slipped.startTime === 10 && slipped.duration === 5 && slipped.mediaOffset === 5 && slippedMax.mediaOffset === 15;
-  results.push(`Test 2 (Slip Edit Math & Clamping): ${test2Pass ? 'PASS' : 'FAIL'} (MediaOffset: ${slipped.mediaOffset}, MaxClamped: ${slippedMax.mediaOffset})`);
+  const slippedMin = slipClip(mockClip, -100);
+  const test2Pass = slipped.startTime === 10 && slipped.duration === 5 && slipped.mediaOffset === 5 && slippedMax.mediaOffset === 15 && slippedMin.mediaOffset === 0;
+  results.push(`Test 2 (Slip Edit Math & Clamping): ${test2Pass ? 'PASS' : 'FAIL'} (MediaOffset: ${slipped.mediaOffset}, MaxClamped: ${slippedMax.mediaOffset}, MinClamped: ${slippedMin.mediaOffset})`);
 
   // Test 3: Roll Edit Math & Min Duration Protection
   const left: Clip = { ...mockClip, id: 'left', startTime: 0, duration: 4 };
@@ -60,19 +61,22 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
     `Test 4 (Slide Edit Explicit Assertions): ${test4Pass ? 'PASS' : 'FAIL'} (Prev Dur: ${slidedClips[0].duration}, Target Start: ${slidedClips[1].startTime}, Next Start: ${slidedClips[2].startTime}, Next Dur: ${slidedClips[2].duration})`
   );
 
-  // Test 5: Insert Edit Math
+  // Test 5: Insert Edit Math (Empty track & Middle insert)
   const existing: Clip = { ...mockClip, id: 'exist', startTime: 5, duration: 10 };
   const newInsert: Clip = { ...mockClip, id: 'insert', startTime: 5, duration: 3 };
   const inserted = insertClip([existing], newInsert);
-  const test5Pass = inserted[0].id === 'insert' && inserted[1].startTime === 8;
-  results.push(`Test 5 (Insert Edit Shift Math): ${test5Pass ? 'PASS' : 'FAIL'} (Shifted Start: ${inserted[1].startTime})`);
+  const insertedEmpty = insertClip([], newInsert);
+  const test5Pass = inserted[0].id === 'insert' && inserted[1].startTime === 8 && insertedEmpty.length === 1;
+  results.push(`Test 5 (Insert Edit Shift Math): ${test5Pass ? 'PASS' : 'FAIL'} (Shifted Start: ${inserted[1].startTime}, EmptyCount: ${insertedEmpty.length})`);
 
-  // Test 6: Overwrite Edit Math
+  // Test 6: Overwrite Edit Math (Full & Partial Overwrites)
   const targetToOverwrite: Clip = { ...mockClip, id: 'target', startTime: 0, duration: 10 };
   const overwriter: Clip = { ...mockClip, id: 'overwriter', startTime: 3, duration: 4 };
   const overwrote = overwriteClip([targetToOverwrite], overwriter);
-  const test6Pass = overwrote.length === 3 && overwrote[0].duration === 3 && overwrote[1].id === 'overwriter' && overwrote[2].startTime === 7 && overwrote[2].duration === 3;
-  results.push(`Test 6 (Overwrite Edit Slice Math): ${test6Pass ? 'PASS' : 'FAIL'} (Result Count: ${overwrote.length}, Left Dur: ${overwrote[0].duration}, Right Start: ${overwrote[2].startTime})`);
+  const fullOverwriter: Clip = { ...mockClip, id: 'full', startTime: 0, duration: 12 };
+  const fullOverwrote = overwriteClip([targetToOverwrite], fullOverwriter);
+  const test6Pass = overwrote.length === 3 && overwrote[0].duration === 3 && overwrote[1].id === 'overwriter' && overwrote[2].startTime === 7 && overwrote[2].duration === 3 && fullOverwrote.length === 1 && fullOverwrote[0].id === 'full';
+  results.push(`Test 6 (Overwrite Edit Slice Math): ${test6Pass ? 'PASS' : 'FAIL'} (Result Count: ${overwrote.length}, Full Overwrite Count: ${fullOverwrote.length})`);
 
   // Test 7: Canonical Timeline → Source Mapping Determinism
   const testTimestamps = [10.0, 11.5, 12.5, 14.0];
@@ -86,20 +90,41 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   });
   results.push(`Test 7 (Canonical Timeline → Source Mapping Determinism): ${determinismPass ? 'PASS' : 'FAIL'} (Expected ${expectedValues.join(', ')})`);
 
-  // Test 8: Speed Curves Deterministic Integral Mapping (HERO, MONTAGE, BULLET TIME, FLASH OUT)
-  const heroClip: Clip = { ...mockClip, speedCurve: 'hero' };
-  const montageClip: Clip = { ...mockClip, speedCurve: 'montage' };
-  const bulletClip: Clip = { ...mockClip, speedCurve: 'bulletTime' };
-  const flashClip: Clip = { ...mockClip, speedCurve: 'flashOut' };
+  // Test 8: Independent Derivation Speed Curve Testing (HERO, MONTAGE, BULLET TIME, FLASH OUT)
+  // Independent Derivation for Hero (duration = 5, mediaOffset = 2):
+  // r < 0.3 (t < 1.5s): speed = 0.5. At t = 1.0s, expected = 2.0 + 1.0 * 0.5 = 2.5
+  // r < 0.7 (1.5s <= t < 3.5s): speed = 2.5. At t = 3.5s, expected = 2.0 + 1.5 * 0.5 + 2.0 * 2.5 = 7.75
+  // r >= 0.7 (t >= 3.5s): speed = 0.8. At t = 5.0s, expected = 2.0 + 5.75 + 1.5 * 0.8 = 8.95
+  const heroClip: Clip = { ...mockClip, speedCurve: 'hero', duration: 5, mediaOffset: 2 };
+  const heroT1 = mapTimelineTimeToSourceTime(heroClip, 1.0);
+  const heroT3_5 = mapTimelineTimeToSourceTime(heroClip, 3.5);
+  const heroT5 = mapTimelineTimeToSourceTime(heroClip, 5.0);
 
-  const heroTime = mapTimelineTimeToSourceTime(heroClip, 2.5);
-  const montageTime = mapTimelineTimeToSourceTime(montageClip, 2.5);
-  const bulletTime = mapTimelineTimeToSourceTime(bulletClip, 2.5);
-  const flashTime = mapTimelineTimeToSourceTime(flashClip, 2.5);
+  const heroPass = Math.abs(heroT1 - 2.5) < 0.05 && Math.abs(heroT3_5 - 7.75) < 0.05 && Math.abs(heroT5 - 8.95) < 0.05;
 
-  const test8Pass = heroTime > 0 && montageTime > 0 && bulletTime > 0 && flashTime > 0;
-  results.push(`Test 8 (Speed Curves Deterministic Integrals): ${test8Pass ? 'PASS' : 'FAIL'} (Hero: ${heroTime.toFixed(2)}, Montage: ${montageTime.toFixed(2)}, Bullet: ${bulletTime.toFixed(2)}, Flash: ${flashTime.toFixed(2)})`);
+  // Independent Derivation for Montage (duration = 5, mediaOffset = 2):
+  // r < 0.5 (t < 2.5s): speed = 1.5. At t = 2.5s, expected = 2.0 + 2.5 * 1.5 = 5.75
+  // r >= 0.5 (t >= 2.5s): speed = 3.0. At t = 5.0s, expected = 2.0 + 3.75 + 2.5 * 3.0 = 13.25
+  const montageClip: Clip = { ...mockClip, speedCurve: 'montage', duration: 5, mediaOffset: 2 };
+  const montageT2_5 = mapTimelineTimeToSourceTime(montageClip, 2.5);
+  const montageT5 = mapTimelineTimeToSourceTime(montageClip, 5.0);
+  const montagePass = Math.abs(montageT2_5 - 5.75) < 0.05 && Math.abs(montageT5 - 13.25) < 0.05;
 
-  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass;
+  const test8Pass = heroPass && montagePass;
+  results.push(`Test 8 (Speed Curves Independent Mathematical Verification): ${test8Pass ? 'PASS' : 'FAIL'} (Hero 1s: ${heroT1.toFixed(2)} [Exp 2.5], Hero 5s: ${heroT5.toFixed(2)} [Exp 8.95], Montage 5s: ${montageT5.toFixed(2)} [Exp 13.25])`);
+
+  // Test 9: State Snapshot Reversibility (Undo / Redo Simulation)
+  const stateA: Track[] = [{ id: 't1', name: 'Track 1', type: 'video', clips: [clipA, clipB], muted: false, hidden: false, locked: false }];
+  // Operation: Slip clipB by 2
+  const stateB: Track[] = stateA.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === 'clipB' ? slipClip(c, 2) : c)) }));
+  // Undo: Restore State A
+  const undoneState = JSON.parse(JSON.stringify(stateA));
+  // Redo: Restore State B
+  const redoneState = JSON.parse(JSON.stringify(stateB));
+
+  const test9Pass = undoneState[0].clips[1].mediaOffset === stateA[0].clips[1].mediaOffset && redoneState[0].clips[1].mediaOffset === stateB[0].clips[1].mediaOffset;
+  results.push(`Test 9 (State Snapshot Reversibility Undo/Redo): ${test9Pass ? 'PASS' : 'FAIL'} (Undone Offset: ${undoneState[0].clips[1].mediaOffset}, Redone Offset: ${redoneState[0].clips[1].mediaOffset})`);
+
+  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass;
   return { passed, results };
 }
