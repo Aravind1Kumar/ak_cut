@@ -43,6 +43,7 @@ import {
   ArrowUp,
   ArrowDown,
   Minus,
+  Clock,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import {
@@ -113,6 +114,7 @@ export const Inspector: React.FC = () => {
   const [activeTextTab, setActiveTextTab] = useState<'text' | 'style' | 'effects' | 'presets'>('text');
   const [fontSearchQuery, setFontSearchQuery] = useState('');
   const [isFontMenuOpen, setIsFontMenuOpen] = useState(false);
+  const [recentColors, setRecentColors] = useState<string[]>(['#ffffff', '#00f2fe', '#ef4444', '#a855f7']);
 
   const [openSections, setOpenSections] = useState<{ [key: string]: boolean }>({
     text: true,
@@ -166,13 +168,21 @@ export const Inspector: React.FC = () => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
   };
 
+  const handleAddRecentColor = (hex: string) => {
+    if (!hex || !hex.startsWith('#')) return;
+    setRecentColors((prev) => {
+      const filtered = prev.filter((c) => c.toLowerCase() !== hex.toLowerCase());
+      return [hex, ...filtered].slice(0, 8);
+    });
+  };
+
   if (!selectedClip) {
     return (
       <aside className="w-80 bg-dark-900 border-l border-dark-700 flex flex-col p-4 select-none shrink-0 overflow-y-auto">
-        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-gray-500">
-          <Sliders className="w-12 h-12 text-gray-600 mb-3 stroke-1" />
-          <h3 className="text-sm font-bold text-gray-300 mb-1">No Clip Selected</h3>
-          <p className="text-xs text-gray-500">Click a clip on the timeline to edit typography, keyframes, or transforms.</p>
+        <div className="flex-1 flex flex-col items-center justify-center text-center p-6 text-gray-500 space-y-3">
+          <Sliders className="w-12 h-12 text-gray-600 stroke-1" />
+          <h3 className="text-sm font-bold text-gray-300">No Clip Selected</h3>
+          <p className="text-xs text-gray-500">Select a clip on the timeline or click text on canvas to open property controls.</p>
         </div>
       </aside>
     );
@@ -222,6 +232,7 @@ export const Inspector: React.FC = () => {
     updateClip(selectedClip.id, { keyframes: updatedKfs });
     commitTransaction();
   };
+
 
   const currentText: TextProps = selectedClip.text || {
     content: 'Type Text Here',
@@ -286,7 +297,7 @@ export const Inspector: React.FC = () => {
           <div className="px-3 py-2.5 bg-gradient-to-r from-cyan-950/40 to-dark-900 border-b border-cyan-500/30 flex items-center justify-between">
             <span className="flex items-center space-x-2 text-xs font-black text-cyan-300 uppercase tracking-widest">
               <Type className="w-4 h-4 text-cyan-400" />
-              <span>TEXT EDITOR</span>
+              <span>TEXT WORKSPACE</span>
             </span>
 
             {/* Quick Actions */}
@@ -365,9 +376,9 @@ export const Inspector: React.FC = () => {
             {/* TAB 1 & 2: TYPOGRAPHY & STYLING */}
             {(activeTextTab === 'text' || activeTextTab === 'style') && (
               <>
-                {/* SEARCHABLE FONT SELECTOR */}
+                {/* SEARCHABLE FONT SELECTOR WITH LIVE PREVIEW */}
                 <div className="relative">
-                  <label className="text-[10px] font-bold text-gray-400 block mb-1">FONT FAMILY</label>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1">FONT FAMILY & PREVIEW</label>
                   <button
                     onClick={() => setIsFontMenuOpen(!isFontMenuOpen)}
                     className="w-full bg-dark-900 border border-dark-700 hover:border-cyan-500/60 rounded-xl px-3 py-2 text-xs text-white font-medium flex items-center justify-between transition"
@@ -389,7 +400,7 @@ export const Inspector: React.FC = () => {
                           className="w-full bg-dark-950 border border-dark-700 rounded-lg pl-8 pr-2 py-1.5 text-xs text-white outline-none focus:border-cyan-400"
                         />
                       </div>
-                      <div className="max-h-48 overflow-y-auto space-y-0.5">
+                      <div className="max-h-56 overflow-y-auto space-y-1">
                         {filteredFonts.map((font) => (
                           <button
                             key={font}
@@ -398,13 +409,17 @@ export const Inspector: React.FC = () => {
                               updateClipText(selectedClip!.id, { fontFamily: font });
                               setIsFontMenuOpen(false);
                             }}
-                            className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition flex items-center justify-between ${
-                              currentText.fontFamily === font ? 'bg-cyan-500/20 text-cyan-300 font-bold' : 'text-gray-300 hover:bg-dark-800'
+                            className={`w-full text-left px-2.5 py-2 rounded-xl text-xs transition flex items-center justify-between border ${
+                              currentText.fontFamily === font ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-bold' : 'text-gray-300 hover:bg-dark-800 border-transparent'
                             }`}
-                            style={{ fontFamily: font }}
                           >
-                            <span>{font.split(',')[0]}</span>
-                            {currentText.fontFamily === font && <CheckCircle className="w-3.5 h-3.5 text-cyan-400" />}
+                            <div className="flex flex-col">
+                              <span className="font-bold">{font.split(',')[0]}</span>
+                              <span className="text-[11px] text-gray-400 truncate max-w-[180px]" style={{ fontFamily: font }}>
+                                Aa Bb Cc 123
+                              </span>
+                            </div>
+                            {currentText.fontFamily === font && <CheckCircle className="w-4 h-4 text-cyan-400 shrink-0" />}
                           </button>
                         ))}
                       </div>
@@ -607,7 +622,7 @@ export const Inspector: React.FC = () => {
                   </div>
                 </div>
 
-                {/* TEXT COLOR & FILL MODE */}
+                {/* TEXT COLOR & FILL MODE WITH RECENT COLORS */}
                 <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">FILL TYPE & COLOR</span>
@@ -641,7 +656,10 @@ export const Inspector: React.FC = () => {
                         <input
                           type="color"
                           value={currentText.color && currentText.color.startsWith('#') ? currentText.color : '#ffffff'}
-                          onChange={(e) => updateClipText(selectedClip!.id, { color: e.target.value })}
+                          onChange={(e) => {
+                            updateClipText(selectedClip!.id, { color: e.target.value });
+                            handleAddRecentColor(e.target.value);
+                          }}
                           onMouseDown={() => pushHistory()}
                           className="absolute -inset-2 w-12 h-12 cursor-pointer border-0 bg-transparent"
                         />
@@ -651,7 +669,10 @@ export const Inspector: React.FC = () => {
                         <input
                           type="text"
                           value={currentText.color}
-                          onChange={(e) => updateClipText(selectedClip!.id, { color: e.target.value })}
+                          onChange={(e) => {
+                            updateClipText(selectedClip!.id, { color: e.target.value });
+                            handleAddRecentColor(e.target.value);
+                          }}
                           className="w-16 bg-transparent text-xs font-mono font-bold text-cyan-300 uppercase outline-none"
                         />
                       </div>
@@ -664,7 +685,10 @@ export const Inspector: React.FC = () => {
                           <input
                             type="color"
                             value={currentText.gradientColorStop2 || '#00f2fe'}
-                            onChange={(e) => updateClipText(selectedClip!.id, { gradientColorStop2: e.target.value })}
+                            onChange={(e) => {
+                              updateClipText(selectedClip!.id, { gradientColorStop2: e.target.value });
+                              handleAddRecentColor(e.target.value);
+                            }}
                             onMouseDown={() => pushHistory()}
                             className="absolute -inset-2 w-12 h-12 cursor-pointer border-0 bg-transparent"
                           />
@@ -674,7 +698,10 @@ export const Inspector: React.FC = () => {
                           <input
                             type="text"
                             value={currentText.gradientColorStop2 || '#00f2fe'}
-                            onChange={(e) => updateClipText(selectedClip!.id, { gradientColorStop2: e.target.value })}
+                            onChange={(e) => {
+                              updateClipText(selectedClip!.id, { gradientColorStop2: e.target.value });
+                              handleAddRecentColor(e.target.value);
+                            }}
                             className="w-16 bg-transparent text-xs font-mono font-bold text-cyan-300 uppercase outline-none"
                           />
                         </div>
@@ -698,6 +725,30 @@ export const Inspector: React.FC = () => {
                     </div>
                   )}
 
+                  {/* Recent Colors Swatches */}
+                  {recentColors.length > 0 && (
+                    <div>
+                      <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider block mb-1 flex items-center space-x-1">
+                        <Clock className="w-2.5 h-2.5 text-cyan-400" />
+                        <span>RECENT COLORS</span>
+                      </span>
+                      <div className="flex items-center space-x-1.5">
+                        {recentColors.map((hex) => (
+                          <button
+                            key={hex}
+                            onClick={() => {
+                              pushHistory();
+                              updateClipText(selectedClip!.id, { color: hex });
+                            }}
+                            className="w-6 h-6 rounded-full border border-dark-600 transition transform hover:scale-110 shrink-0"
+                            style={{ backgroundColor: hex }}
+                            title={`Use Recent ${hex}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Quick Color Swatches */}
                   <div>
                     <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider block mb-1">QUICK PALETTE</span>
@@ -708,6 +759,7 @@ export const Inspector: React.FC = () => {
                           onClick={() => {
                             pushHistory();
                             updateClipText(selectedClip!.id, { color: c.hex });
+                            handleAddRecentColor(c.hex);
                           }}
                           className={`py-1 px-1 rounded-lg border border-dark-700 transition flex items-center space-x-1.5 ${
                             currentText.color.toLowerCase() === c.hex.toLowerCase() ? 'ring-2 ring-cyan-400 bg-dark-800 font-black' : 'bg-dark-950'
