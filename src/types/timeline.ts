@@ -91,7 +91,9 @@ export interface TextProps {
   verticalAlignment?: 'top' | 'center' | 'bottom';
   bold: boolean;
   italic: boolean;
+  fontWeight?: '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900' | 'normal' | 'bold';
   underline?: boolean;
+
   strikethrough?: boolean;
   textTransform?: TextTransformType;
   fillType?: TextFillType;

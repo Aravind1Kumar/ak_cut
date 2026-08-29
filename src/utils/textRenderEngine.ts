@@ -427,7 +427,8 @@ export function renderTextClipOnCanvas(
 
   const fontSize = textProps.fontSize || 48;
   const fontFamily = textProps.fontFamily || 'Inter, sans-serif';
-  const fontStyle = `${textProps.italic ? 'italic ' : ''}${textProps.bold ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+  const weightStr = textProps.fontWeight ? `${textProps.fontWeight} ` : (textProps.bold ? 'bold ' : '');
+  const fontStyle = `${textProps.italic ? 'italic ' : ''}${weightStr}${fontSize}px ${fontFamily}`;
   ctx.font = fontStyle;
 
   if (textProps.letterSpacing && (ctx as any).letterSpacing !== undefined) {

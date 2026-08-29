@@ -555,6 +555,27 @@ export const Inspector: React.FC = () => {
                       </button>
                     </div>
 
+                    {/* Text Weight */}
+                    <div className="w-28">
+                      <select
+                        value={currentText.fontWeight || 'bold'}
+                        onChange={(e) => {
+                          pushHistory();
+                          updateClipText(selectedClip!.id, { fontWeight: e.target.value as any });
+                        }}
+                        className="w-full bg-dark-950 border border-dark-700 rounded-xl px-2 py-2 text-[11px] text-cyan-300 font-bold outline-none focus:border-cyan-400 cursor-pointer"
+                      >
+                        <option value="100">Thin 100</option>
+                        <option value="300">Light 300</option>
+                        <option value="400">Regular 400</option>
+                        <option value="500">Medium 500</option>
+                        <option value="600">Semibold 600</option>
+                        <option value="700">Bold 700</option>
+                        <option value="800">Extra Bold</option>
+                        <option value="900">Black 900</option>
+                      </select>
+                    </div>
+
                     {/* Text Transform / Case */}
                     <div className="flex-1">
                       <select
@@ -563,7 +584,7 @@ export const Inspector: React.FC = () => {
                           pushHistory();
                           updateClipText(selectedClip!.id, { textTransform: e.target.value as TextTransformType });
                         }}
-                        className="w-full bg-dark-950 border border-dark-700 rounded-xl px-2 py-2 text-xs text-cyan-300 font-bold outline-none focus:border-cyan-400 cursor-pointer"
+                        className="w-full bg-dark-950 border border-dark-700 rounded-xl px-2 py-2 text-[11px] text-cyan-300 font-bold outline-none focus:border-cyan-400 cursor-pointer"
                       >
                         <option value="none">Aa Normal Case</option>
                         <option value="uppercase">AA UPPERCASE</option>
@@ -572,6 +593,7 @@ export const Inspector: React.FC = () => {
                       </select>
                     </div>
                   </div>
+
 
                   {/* Horizontal & Vertical Alignment Toolbar */}
                   <div className="space-y-1.5 pt-1 border-t border-dark-800">
