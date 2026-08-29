@@ -12,6 +12,7 @@ import { audioBufferToWav } from './audioWavEncoder';
 import { getSourceTimeForTimelineTime } from './timelineMath';
 import { getInterpolatedTransform, getInterpolatedFilter } from './keyframeEngine';
 import { renderTextClipOnCanvas } from './textRenderEngine';
+import { applyOfflineAudioGraph } from './audioGraphEngine';
 
 export interface ExportSettings {
   resolution: '720p' | '1080p';
@@ -339,22 +340,8 @@ export async function exportVideoProject(
             sourceNode.playbackRate.value = clip.speed;
           }
 
-          const gainNode = offlineCtx.createGain();
-          const volumeGain = clip.audio.volume ?? 1;
-          gainNode.gain.setValueAtTime(volumeGain, clip.startTime);
-
-          if (clip.audio.fadeIn > 0) {
-            gainNode.gain.setValueAtTime(0, clip.startTime);
-            gainNode.gain.linearRampToValueAtTime(volumeGain, clip.startTime + clip.audio.fadeIn);
-          }
-          if (clip.audio.fadeOut > 0) {
-            const fadeOutStart = clip.startTime + clip.duration - clip.audio.fadeOut;
-            gainNode.gain.setValueAtTime(volumeGain, Math.max(clip.startTime, fadeOutStart));
-            gainNode.gain.linearRampToValueAtTime(0, clip.startTime + clip.duration);
-          }
-
-          sourceNode.connect(gainNode);
-          gainNode.connect(offlineCtx.destination);
+          // Connect complete audio processing chain (Gain, Fade, Ducking, HighPass, LowPass, Stereo Pan)
+          applyOfflineAudioGraph(offlineCtx, sourceNode, clip, tracks);
 
           sourceNode.start(clip.startTime, clip.mediaOffset, clip.duration * clip.speed);
           hasAudioSource = true;

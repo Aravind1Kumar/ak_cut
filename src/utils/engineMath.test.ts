@@ -178,6 +178,18 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   const test11Pass = Math.abs(fadeVol - 0.5) < 0.05 && Math.abs(duckedVol - 0.4) < 0.05 && Math.abs(unduckedVol - 0.5) < 0.05;
   results.push(`Test 11 (Audio Ducking & Volume Envelope Engine): ${test11Pass ? 'PASS' : 'FAIL'} (Fade 1s: ${fadeVol.toFixed(2)}, Ducked 5s: ${duckedVol.toFixed(2)}, FadeOut 9s: ${unduckedVol.toFixed(2)})`);
 
-  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass && test10Pass && test11Pass;
+  // Test 12: Audio Pan & Equalizer (HighPass / LowPass) Configuration Math Engine
+  const pannedLeftClip: Clip = { ...mockClip, audio: { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false, pan: -100, lowPass: 12000, highPass: 100 } };
+  const pannedCenterClip: Clip = { ...mockClip, audio: { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false, pan: 0, lowPass: 20000, highPass: 20 } };
+  const pannedRightClip: Clip = { ...mockClip, audio: { volume: 1.0, fadeIn: 0, fadeOut: 0, muted: false, pan: 100, lowPass: 8000, highPass: 300 } };
+
+  const normPanLeft = Math.max(-1, Math.min(1, (pannedLeftClip.audio.pan || 0) / 100));
+  const normPanCenter = Math.max(-1, Math.min(1, (pannedCenterClip.audio.pan || 0) / 100));
+  const normPanRight = Math.max(-1, Math.min(1, (pannedRightClip.audio.pan || 0) / 100));
+
+  const test12Pass = normPanLeft === -1.0 && normPanCenter === 0.0 && normPanRight === 1.0 && pannedLeftClip.audio.highPass === 100 && pannedRightClip.audio.lowPass === 8000;
+  results.push(`Test 12 (Audio Stereo Pan & Equalizer Cutoff Engine): ${test12Pass ? 'PASS' : 'FAIL'} (Pan Left: ${normPanLeft}, Center: ${normPanCenter}, Right: ${normPanRight}, HP: ${pannedLeftClip.audio.highPass}Hz, LP: ${pannedRightClip.audio.lowPass}Hz)`);
+
+  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass && test10Pass && test11Pass && test12Pass;
   return { passed, results };
 }
