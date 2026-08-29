@@ -72,18 +72,18 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   const test6Pass = overwrote.length === 3 && overwrote[0].duration === 3 && overwrote[1].id === 'overwriter' && overwrote[2].startTime === 7 && overwrote[2].duration === 3;
   results.push(`Test 6 (Overwrite Edit Slice Math): ${test6Pass ? 'PASS' : 'FAIL'} (Result Count: ${overwrote.length}, Left Dur: ${overwrote[0].duration}, Right Start: ${overwrote[2].startTime})`);
 
-  // Test 7: Preview vs Exporter Frame Seek Time Parity
+  // Test 7: Canonical Timeline → Source Mapping Determinism
   const testTimestamps = [10.0, 11.5, 12.5, 14.0];
-  let parityPass = true;
-  testTimestamps.forEach((t) => {
-    const previewTime = getSourceTimeForTimelineTime(mockClip, t);
-    const exporterTime = getSourceTimeForTimelineTime(mockClip, t);
-    if (Math.abs(previewTime - exporterTime) > 0.0001) {
-      parityPass = false;
+  const expectedValues = [2.0, 3.5, 4.5, 6.0];
+  let determinismPass = true;
+  testTimestamps.forEach((t, i) => {
+    const computed = getSourceTimeForTimelineTime(mockClip, t);
+    if (Math.abs(computed - expectedValues[i]) > 0.0001) {
+      determinismPass = false;
     }
   });
-  results.push(`Test 7 (Preview vs Exporter Seek Parity): ${parityPass ? 'PASS' : 'FAIL'} (Tested Timestamps: ${testTimestamps.join(', ')})`);
+  results.push(`Test 7 (Canonical Timeline → Source Mapping Determinism): ${determinismPass ? 'PASS' : 'FAIL'} (Expected ${expectedValues.join(', ')})`);
 
-  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && parityPass;
+  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass;
   return { passed, results };
 }
