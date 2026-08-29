@@ -907,6 +907,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         clips: t.clips.map((c) => (c.id === selectedClipId ? slipClip(c, offsetDelta) : c)),
       })),
     }));
+    get().pushHistory();
     saveProjectToDB();
   },
 
@@ -920,6 +921,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         return hasClip ? { ...t, clips: slideClip(t.clips, selectedClipId, timeDelta) } : t;
       }),
     }));
+    get().pushHistory();
     saveProjectToDB();
   },
 
@@ -941,6 +943,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         return t;
       }),
     }));
+    get().pushHistory();
     saveProjectToDB();
   },
 
@@ -959,6 +962,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         }));
       }
     }
+    get().pushHistory();
     saveProjectToDB();
   },
 
@@ -977,6 +981,7 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         }));
       }
     }
+    get().pushHistory();
     saveProjectToDB();
   },
 
@@ -991,9 +996,15 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
 
   pushHistory: () => {
     const { tracks, history, historyIndex } = get();
-    const newHistory = history.slice(0, historyIndex + 1);
+    let newHistory = history.slice(0, historyIndex + 1);
+    if (newHistory.length === 0) {
+      newHistory.push(JSON.parse(JSON.stringify(tracks)));
+    }
     const snapshot = JSON.parse(JSON.stringify(tracks));
-    newHistory.push(snapshot);
+    // Avoid duplicate adjacent snapshots
+    if (newHistory.length === 0 || JSON.stringify(newHistory[newHistory.length - 1]) !== JSON.stringify(snapshot)) {
+      newHistory.push(snapshot);
+    }
     set({
       history: newHistory,
       historyIndex: newHistory.length - 1,

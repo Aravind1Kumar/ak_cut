@@ -1,6 +1,7 @@
 ﻿import { Clip, Track } from '../types/timeline';
 import { mapTimelineTimeToSourceTime, SPEED_CURVE_PRESETS } from './speedEngine';
 import { slipClip, slideClip, rollEdit, insertClip, overwriteClip, getSourceTimeForTimelineTime } from './timelineMath';
+import { useTimelineStore } from '../store/timelineStore';
 
 const mockClip: Clip = {
   id: 'clip-1',
@@ -48,7 +49,7 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
 
   // Test 4: Slide Edit Math (Explicit Assertions)
   const clipA: Clip = { ...mockClip, id: 'clipA', startTime: 0, duration: 5 };
-  const clipB: Clip = { ...mockClip, id: 'clipB', startTime: 5, duration: 5 };
+  const clipB: Clip = { ...mockClip, id: 'clipB', startTime: 5, duration: 5, mediaOffset: 3 };
   const clipC: Clip = { ...mockClip, id: 'clipC', startTime: 10, duration: 5, mediaOffset: 0 };
   const slidedClips = slideClip([clipA, clipB, clipC], 'clipB', 1);
   const test4Pass =
@@ -91,20 +92,12 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   results.push(`Test 7 (Canonical Timeline → Source Mapping Determinism): ${determinismPass ? 'PASS' : 'FAIL'} (Expected ${expectedValues.join(', ')})`);
 
   // Test 8: Independent Derivation Speed Curve Testing (HERO, MONTAGE, BULLET TIME, FLASH OUT)
-  // Independent Derivation for Hero (duration = 5, mediaOffset = 2):
-  // r < 0.3 (t < 1.5s): speed = 0.5. At t = 1.0s, expected = 2.0 + 1.0 * 0.5 = 2.5
-  // r < 0.7 (1.5s <= t < 3.5s): speed = 2.5. At t = 3.5s, expected = 2.0 + 1.5 * 0.5 + 2.0 * 2.5 = 7.75
-  // r >= 0.7 (t >= 3.5s): speed = 0.8. At t = 5.0s, expected = 2.0 + 5.75 + 1.5 * 0.8 = 8.95
   const heroClip: Clip = { ...mockClip, speedCurve: 'hero', duration: 5, mediaOffset: 2 };
   const heroT1 = mapTimelineTimeToSourceTime(heroClip, 1.0);
   const heroT3_5 = mapTimelineTimeToSourceTime(heroClip, 3.5);
   const heroT5 = mapTimelineTimeToSourceTime(heroClip, 5.0);
-
   const heroPass = Math.abs(heroT1 - 2.5) < 0.05 && Math.abs(heroT3_5 - 7.75) < 0.05 && Math.abs(heroT5 - 8.95) < 0.05;
 
-  // Independent Derivation for Montage (duration = 5, mediaOffset = 2):
-  // r < 0.5 (t < 2.5s): speed = 1.5. At t = 2.5s, expected = 2.0 + 2.5 * 1.5 = 5.75
-  // r >= 0.5 (t >= 2.5s): speed = 3.0. At t = 5.0s, expected = 2.0 + 3.75 + 2.5 * 3.0 = 13.25
   const montageClip: Clip = { ...mockClip, speedCurve: 'montage', duration: 5, mediaOffset: 2 };
   const montageT2_5 = mapTimelineTimeToSourceTime(montageClip, 2.5);
   const montageT5 = mapTimelineTimeToSourceTime(montageClip, 5.0);
@@ -113,17 +106,32 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   const test8Pass = heroPass && montagePass;
   results.push(`Test 8 (Speed Curves Independent Mathematical Verification): ${test8Pass ? 'PASS' : 'FAIL'} (Hero 1s: ${heroT1.toFixed(2)} [Exp 2.5], Hero 5s: ${heroT5.toFixed(2)} [Exp 8.95], Montage 5s: ${montageT5.toFixed(2)} [Exp 13.25])`);
 
-  // Test 9: State Snapshot Reversibility (Undo / Redo Simulation)
-  const stateA: Track[] = [{ id: 't1', name: 'Track 1', type: 'video', clips: [clipA, clipB], muted: false, hidden: false, locked: false }];
-  // Operation: Slip clipB by 2
-  const stateB: Track[] = stateA.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === 'clipB' ? slipClip(c, 2) : c)) }));
-  // Undo: Restore State A
-  const undoneState = JSON.parse(JSON.stringify(stateA));
-  // Redo: Restore State B
-  const redoneState = JSON.parse(JSON.stringify(stateB));
+  // Test 9: Real Zustand Store History Operations (pushHistory, slipSelectedClip, undo, redo)
+  const initialTrack: Track = { id: 'track-v1', name: 'Main', type: 'video', locked: false, hidden: false, muted: false, clips: [clipB] };
+  useTimelineStore.setState({
+    tracks: [initialTrack],
+    selectedClipId: 'clipB',
+    history: [],
+    historyIndex: -1,
+  });
 
-  const test9Pass = undoneState[0].clips[1].mediaOffset === stateA[0].clips[1].mediaOffset && redoneState[0].clips[1].mediaOffset === stateB[0].clips[1].mediaOffset;
-  results.push(`Test 9 (State Snapshot Reversibility Undo/Redo): ${test9Pass ? 'PASS' : 'FAIL'} (Undone Offset: ${undoneState[0].clips[1].mediaOffset}, Redone Offset: ${redoneState[0].clips[1].mediaOffset})`);
+  // Action 1: Initial state snapshot
+  useTimelineStore.getState().pushHistory(); // index 0: offset 3
+
+  // Action 2: Perform store slip action
+  useTimelineStore.getState().slipSelectedClip(2); // index 1: offset 5
+  const stateB_offset = useTimelineStore.getState().tracks[0].clips[0].mediaOffset;
+
+  // Action 3: Execute real store undo()
+  useTimelineStore.getState().undo(); // index 0: offset 3
+  const stateA_undone_offset = useTimelineStore.getState().tracks[0].clips[0].mediaOffset;
+
+  // Action 4: Execute real store redo()
+  useTimelineStore.getState().redo(); // index 1: offset 5
+  const stateB_redone_offset = useTimelineStore.getState().tracks[0].clips[0].mediaOffset;
+
+  const test9Pass = stateB_offset === 5 && stateA_undone_offset === 3 && stateB_redone_offset === 5;
+  results.push(`Test 9 (Real Zustand Store History Undo/Redo): ${test9Pass ? 'PASS' : 'FAIL'} (State B: ${stateB_offset}, Undone State A: ${stateA_undone_offset}, Redone State B: ${stateB_redone_offset})`);
 
   const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass;
   return { passed, results };
