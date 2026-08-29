@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:engine": "npx tsx src/utils/runEngineTest.ts"
+    "test:engine": "npx tsx src/utils/runEngineTest.ts",
+    "test:e2e": "npx tsx tests/e2e/e2eFullSuite.ts"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^6.2.0",
+    "@playwright/test": "^1.62.1",
     "@types/node": "^22.10.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
