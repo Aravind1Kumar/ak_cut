@@ -1,4 +1,4 @@
-import { Clip, Track } from '../types/timeline';
+﻿import { Clip } from '../types/timeline';
 import { mapTimelineTimeToSourceTime } from './speedEngine';
 
 // Unified Source/Timeline Time Math function used across Preview, Exporter, Audio & Timeline actions
@@ -91,4 +91,83 @@ export function rollEdit(leftClip: Clip, rightClip: Clip, delta: number): { left
   };
 }
 
+/**
+ * Insert Edit: Inserts a new clip at target startTime and shifts downstream clips forward.
+ */
+export function insertClip(clips: Clip[], newClip: Clip): Clip[] {
+  const targetStart = newClip.startTime;
+  const insertDur = newClip.duration;
 
+  const updatedClips = clips.map((c) => {
+    if (c.startTime >= targetStart) {
+      return { ...c, startTime: c.startTime + insertDur };
+    }
+    return c;
+  });
+
+  return [...updatedClips, newClip].sort((a, b) => a.startTime - b.startTime);
+}
+
+/**
+ * Overwrite Edit: Places clip at target range, truncating or removing occupied clip ranges.
+ */
+export function overwriteClip(clips: Clip[], newClip: Clip): Clip[] {
+  const oStart = newClip.startTime;
+  const oEnd = oStart + newClip.duration;
+
+  const result: Clip[] = [];
+
+  for (const c of clips) {
+    const cStart = c.startTime;
+    const cEnd = c.startTime + c.duration;
+
+    // Completely covered -> remove
+    if (cStart >= oStart && cEnd <= oEnd) {
+      continue;
+    }
+
+    // Overlaps start of existing clip
+    if (oStart <= cStart && oEnd > cStart && oEnd < cEnd) {
+      const trimAmount = oEnd - cStart;
+      result.push({
+        ...c,
+        startTime: oEnd,
+        duration: c.duration - trimAmount,
+        mediaOffset: (c.mediaOffset || 0) + trimAmount,
+      });
+      continue;
+    }
+
+    // Overlaps end of existing clip
+    if (cStart < oStart && cEnd > oStart && cEnd <= oEnd) {
+      result.push({
+        ...c,
+        duration: oStart - cStart,
+      });
+      continue;
+    }
+
+    // Overwrites middle of existing clip (splits into left and right)
+    if (cStart < oStart && cEnd > oEnd) {
+      const leftPart: Clip = {
+        ...c,
+        duration: oStart - cStart,
+      };
+      const rightPart: Clip = {
+        ...c,
+        id: `${c.id}-right-${Date.now()}`,
+        startTime: oEnd,
+        duration: cEnd - oEnd,
+        mediaOffset: (c.mediaOffset || 0) + (oEnd - cStart),
+      };
+      result.push(leftPart, rightPart);
+      continue;
+    }
+
+    // No overlap
+    result.push(c);
+  }
+
+  result.push(newClip);
+  return result.sort((a, b) => a.startTime - b.startTime);
+}
