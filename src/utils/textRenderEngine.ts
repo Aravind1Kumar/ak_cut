@@ -501,8 +501,14 @@ export function renderTextClipOnCanvas(
 
   const startY = -((lines.length - 1) * lineHeight) / 2;
 
+  // Apply Text Opacity if defined
+  if (textProps.textOpacity !== undefined && textProps.textOpacity !== 1.0) {
+    ctx.globalAlpha = ctx.globalAlpha * textProps.textOpacity;
+  }
+
   // Create Fill Style (Solid vs Gradient)
   let textFillStyle: string | CanvasGradient = textProps.color || '#ffffff';
+
   if (textProps.fillType === 'gradient' && textProps.gradientColorStop2) {
     const angleRad = ((textProps.gradientAngle || 90) * Math.PI) / 180;
     const halfW = maxLineWidth / 2;

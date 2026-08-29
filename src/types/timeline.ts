@@ -101,7 +101,9 @@ export interface TextProps {
   gradientAngle?: number;    // 0 to 360 deg
   letterSpacing?: number;    // -20 to +50 px
   lineHeight?: number;       // 0.5 to 3.0
+  textOpacity?: number;      // 0.0 - 1.0
   backgroundEnabled?: boolean;
+
   backgroundColor2?: string;
   backgroundOpacity?: number; // 0.0 - 1.0
   backgroundPadding?: number; // px

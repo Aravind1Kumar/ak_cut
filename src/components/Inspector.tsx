@@ -642,7 +642,28 @@ export const Inspector: React.FC = () => {
                       ))}
                     </div>
                   </div>
+
+                  {/* Text Opacity Slider */}
+                  <div className="space-y-1 pt-1 border-t border-dark-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-bold text-gray-400 uppercase">TEXT OPACITY</span>
+                      <span className="text-[10px] font-mono font-bold text-cyan-300">
+                        {Math.round((currentText.textOpacity ?? 1.0) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      value={currentText.textOpacity ?? 1.0}
+                      onChange={(e) => updateClipText(selectedClip!.id, { textOpacity: parseFloat(e.target.value) })}
+                      onMouseDown={() => pushHistory()}
+                      className="w-full accent-cyan-400 h-1.5 bg-dark-950 rounded-lg cursor-pointer"
+                    />
+                  </div>
                 </div>
+
 
                 {/* TEXT COLOR & FILL MODE WITH RECENT COLORS */}
                 <div className="p-3 bg-dark-900/80 border border-dark-800 rounded-xl space-y-3">
