@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Play, Pause, Grid, RotateCcw, Maximize2, Type, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
+import { Play, Pause, Grid, RotateCcw, Maximize2, Type, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Eye, Shield, ZoomIn } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip } from '../types/timeline';
 import { renderTransitionEffect, findPreviousClipOnSameTrack } from '../utils/transitionEngine';
@@ -19,6 +19,8 @@ export const PreviewPlayer: React.FC = () => {
 
   const [containerBounds, setContainerBounds] = useState({ width: 800, height: 450 });
   const [showGrid, setShowGrid] = useState(false);
+  const [showSafeZone, setShowSafeZone] = useState(false);
+  const [zoomScale, setZoomScale] = useState<number | 'fit'>('fit');
 
   const {
     tracks,
@@ -115,7 +117,12 @@ export const PreviewPlayer: React.FC = () => {
       width = maxH * ratioNum;
     }
 
-    return { width: Math.max(200, Math.floor(width)), height: Math.max(200, Math.floor(height)) };
+    if (typeof zoomScale === 'number') {
+      width = width * zoomScale;
+      height = height * zoomScale;
+    }
+
+    return { width: Math.max(180, Math.floor(width)), height: Math.max(180, Math.floor(height)) };
   };
 
   const { width, height } = getCanvasDimensions();
@@ -304,7 +311,7 @@ export const PreviewPlayer: React.FC = () => {
       drawSingleClip(clip);
     });
 
-    // Bounding Box Controls on Selected Clip
+    // Bounding Box Controls & Center Crosshair Snap Lines on Selected Clip
     if (selectedClip && selectedClip.type !== 'audio' && selectedClip.type !== 'caption') {
       ctx.save();
       const relTime = currentTime - selectedClip.startTime;
@@ -312,6 +319,24 @@ export const PreviewPlayer: React.FC = () => {
 
       const posX = width / 2 + (tf.x / 100) * width;
       const posY = height / 2 + (tf.y / 100) * height;
+
+      // Draw Center Snap Alignment Lines if object near center
+      if (Math.abs(tf.x) < 2) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(width / 2, 0);
+        ctx.lineTo(width / 2, height);
+        ctx.stroke();
+      }
+      if (Math.abs(tf.y) < 2) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, height / 2);
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+      }
 
       ctx.translate(posX, posY);
       ctx.rotate((tf.rotation * Math.PI) / 180);
@@ -337,9 +362,9 @@ export const PreviewPlayer: React.FC = () => {
       ctx.restore();
     }
 
-    // Grid Overlay
+    // Grid & Alignment Overlay
     if (showGrid) {
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
       ctx.lineWidth = 1;
 
       for (let x = width / 3; x < width; x += width / 3) {
@@ -356,7 +381,31 @@ export const PreviewPlayer: React.FC = () => {
         ctx.stroke();
       }
     }
-  }, [width, height, tracks, currentTime, selectedClip, showGrid]);
+
+    // Safe Zone Margin Box Overlay
+    if (showSafeZone) {
+      ctx.strokeStyle = 'rgba(234, 179, 8, 0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([8, 6]);
+
+      // Action Safe (90% boundary)
+      const actX = width * 0.05;
+      const actY = height * 0.05;
+      const actW = width * 0.9;
+      const actH = height * 0.9;
+      ctx.strokeRect(actX, actY, actW, actH);
+
+      // Title Safe (80% boundary)
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.6)';
+      const ttlX = width * 0.1;
+      const ttlY = height * 0.1;
+      const ttlW = width * 0.8;
+      const ttlH = height * 0.8;
+      ctx.strokeRect(ttlX, ttlY, ttlW, ttlH);
+
+      ctx.setLineDash([]);
+    }
+  }, [width, height, tracks, currentTime, selectedClip, showGrid, showSafeZone]);
 
   const handleDoubleClickCanvas = () => {
     if (selectedClip && selectedClip.type === 'text') {
@@ -372,7 +421,7 @@ export const PreviewPlayer: React.FC = () => {
       {/* Canvas Viewport Frame */}
       <div
         onDoubleClick={handleDoubleClickCanvas}
-        className="relative shadow-2xl rounded-xl overflow-hidden border border-dark-700 bg-black flex items-center justify-center"
+        className="relative shadow-2xl rounded-xl overflow-hidden border border-dark-800 bg-black flex items-center justify-center transition-all duration-150"
         style={{ width: `${width}px`, height: `${height}px` }}
       >
         <canvas ref={canvasRef} width={width} height={height} className="block cursor-pointer" />
@@ -525,16 +574,48 @@ export const PreviewPlayer: React.FC = () => {
           </div>
         )}
 
-        {/* Floating Toolbar Overlay */}
-        <div className="absolute top-3 right-3 flex items-center space-x-2 bg-dark-900/80 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-dark-700/80 shadow-lg z-20">
+        {/* Top-Right Canvas Overlay Controls (Grid, Safe Zones, Viewport Zoom) */}
+        <div className="absolute top-3 right-3 flex items-center space-x-1.5 bg-dark-900/90 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-dark-700 shadow-lg z-20">
+          {/* Viewport Zoom Dropdown */}
+          <select
+            value={zoomScale}
+            onChange={(e) => {
+              const val = e.target.value;
+              setZoomScale(val === 'fit' ? 'fit' : parseFloat(val));
+            }}
+            className="bg-dark-950 border border-dark-800 text-[10px] font-mono font-bold text-cyan-300 px-2 py-1 rounded-lg outline-none cursor-pointer"
+            title="Viewport Zoom Scale"
+          >
+            <option value="fit">Fit Canvas</option>
+            <option value="0.5">50%</option>
+            <option value="0.75">75%</option>
+            <option value="1.0">100%</option>
+            <option value="1.5">150%</option>
+            <option value="2.0">200%</option>
+          </select>
+
+          <div className="h-4 w-px bg-dark-800" />
+
+          {/* Safe Zones Toggle */}
+          <button
+            onClick={() => setShowSafeZone(!showSafeZone)}
+            className={`p-1.5 rounded-lg transition ${
+              showSafeZone ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40' : 'text-gray-400 hover:text-white'
+            }`}
+            title="Toggle Safe Zone Margin Overlay"
+          >
+            <Shield className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Grid Toggle */}
           <button
             onClick={() => setShowGrid(!showGrid)}
             className={`p-1.5 rounded-lg transition ${
               showGrid ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40' : 'text-gray-400 hover:text-white'
             }`}
-            title="Toggle Rule-of-Thirds Grid"
+            title="Toggle Alignment Grid & Center Guides"
           >
-            <Grid className="w-4 h-4" />
+            <Grid className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
@@ -543,13 +624,13 @@ export const PreviewPlayer: React.FC = () => {
       <div className="mt-4 flex items-center space-x-4 bg-dark-900/90 border border-dark-700 px-5 py-2.5 rounded-2xl shadow-xl z-20">
         <button
           onClick={() => setIsPlaying(!isPlaying)}
-          className="p-3 bg-cyan-500 hover:bg-cyan-400 text-black font-bold rounded-xl transition shadow-lg shadow-cyan-500/20"
+          className="p-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold rounded-xl transition shadow-lg shadow-cyan-500/20"
           title={isPlaying ? 'Pause' : 'Play'}
         >
           {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
         </button>
 
-        <span className="font-mono text-sm font-bold text-gray-200">
+        <span className="font-mono text-xs font-bold text-gray-200">
           {currentTime.toFixed(2)}s <span className="text-gray-500">/ {maxTimelineDuration.toFixed(2)}s</span>
         </span>
       </div>

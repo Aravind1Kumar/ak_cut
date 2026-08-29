@@ -22,6 +22,8 @@ import {
   ZoomOut,
   FolderPlus,
   FolderMinus,
+  MousePointer,
+  Sparkles,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { Clip, Track, MediaType } from '../types/timeline';
@@ -32,6 +34,7 @@ export const Timeline: React.FC = () => {
   const trackContentContainerRef = useRef<HTMLDivElement>(null);
 
   const [isScrubbingPlayhead, setIsScrubbingPlayhead] = useState(false);
+  const [activeTool, setActiveTool] = useState<'select' | 'blade'>('select');
   const [draggingClip, setDraggingClip] = useState<{
     id: string;
     startX: number;
@@ -100,12 +103,15 @@ export const Timeline: React.FC = () => {
         e.preventDefault();
         const { isPlaying, setIsPlaying } = useTimelineStore.getState();
         setIsPlaying(!isPlaying);
-      } else if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        splitSelectedClip();
+      } else if (e.key.toLowerCase() === 'v' && !e.ctrlKey && !e.metaKey) {
+        setActiveTool('select');
       } else if (e.key.toLowerCase() === 'b' && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
+        setActiveTool('blade');
         splitSelectedClip();
+      } else if (e.key.toLowerCase() === 's' && !e.ctrlKey && !e.metaKey) {
+        splitSelectedClip();
+      } else if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) {
+        setSnappingEnabled(!snappingEnabled);
       } else if (e.key.toLowerCase() === 'm' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         addMarker();
@@ -132,51 +138,36 @@ export const Timeline: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [splitSelectedClip, addMarker, deleteSelectedClip, duplicateSelectedClip, groupSelectedClips, ungroupSelectedClips]);
-
-  useEffect(() => {
-    const handleOutsideClick = () => {
-      setClipContextMenu(null);
-      setTrackContextMenu(null);
-      setMarkerContextMenu(null);
-    };
-    window.addEventListener('click', handleOutsideClick);
-    return () => window.removeEventListener('click', handleOutsideClick);
-  }, []);
+  }, [
+    splitSelectedClip,
+    deleteSelectedClip,
+    duplicateSelectedClip,
+    addMarker,
+    groupSelectedClips,
+    ungroupSelectedClips,
+    snappingEnabled,
+    setSnappingEnabled,
+  ]);
 
   const updateScrubPosition = (clientX: number) => {
-    if (!timelineRef.current) return;
-    const rect = timelineRef.current.getBoundingClientRect();
-    const clickX = clientX - rect.left;
-    const newTime = Math.max(0, clickX / zoomLevel);
+    if (!trackContentContainerRef.current) return;
+    const rect = trackContentContainerRef.current.getBoundingClientRect();
+    const scrollLeft = trackContentContainerRef.current.scrollLeft;
+    const offsetX = clientX - rect.left + scrollLeft;
+    const newTime = Math.max(0, offsetX / zoomLevel);
     setCurrentTime(newTime);
   };
 
-  const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleRulerMouseDown = (e: React.MouseEvent) => {
     setIsScrubbingPlayhead(true);
     updateScrubPosition(e.clientX);
   };
 
-  const handleClipContextMenu = (e: React.MouseEvent, clipId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setSelectedClipId(clipId);
-    setClipContextMenu({ x: e.clientX, y: e.clientY, clipId });
+  const handleAddTrack = (type: MediaType) => {
+    addTrack(type, `${type.toUpperCase()} Track ${tracks.length + 1}`);
   };
 
-  const handleTrackHeaderContextMenu = (e: React.MouseEvent, trackId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setTrackContextMenu({ x: e.clientX, y: e.clientY, trackId });
-  };
-
-  const handleMarkerContextMenu = (e: React.MouseEvent, markerId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setMarkerContextMenu({ x: e.clientX, y: e.clientY, markerId });
-  };
-
-  const handleDeleteTrackSafely = (trackId: string) => {
+  const handleDeleteTrackConfirm = (trackId: string) => {
     const track = tracks.find((t) => t.id === trackId);
     if (track && track.clips.length > 0) {
       const ok = window.confirm(`Track "${track.name}" contains ${track.clips.length} clip(s). Delete track and its clips?`);
@@ -191,6 +182,11 @@ export const Timeline: React.FC = () => {
       return;
     }
     e.stopPropagation();
+
+    if (activeTool === 'blade') {
+      splitSelectedClip();
+      return;
+    }
 
     if (e.ctrlKey || e.metaKey) {
       toggleSelectClipId(clip.id);
@@ -254,35 +250,44 @@ export const Timeline: React.FC = () => {
           });
         });
 
+        const snapThresholdTime = 8 / zoomLevel;
         for (const target of snapTargets) {
-          if (Math.abs(newStart - target) < 0.2) {
+          if (Math.abs(newStart - target) < snapThresholdTime) {
             newStart = target;
+            break;
+          }
+          if (Math.abs(newStart + (draggingClip.groupOriginalStarts ? 0 : 0) - target) < snapThresholdTime) {
             break;
           }
         }
       }
 
-      const actualDelta = newStart - draggingClip.originalStart;
-      updateClip(draggingClip.id, { startTime: newStart });
-
       if (draggingClip.groupOriginalStarts && draggingClip.groupOriginalStarts.length > 0) {
+        const deltaFromOrig = newStart - draggingClip.originalStart;
         draggingClip.groupOriginalStarts.forEach((item) => {
-          if (item.id !== draggingClip.id) {
-            updateClip(item.id, { startTime: Math.max(0, item.start + actualDelta) });
-          }
+          updateClip(item.id, { startTime: Math.max(0, item.start + deltaFromOrig) });
         });
+      } else {
+        updateClip(draggingClip.id, { startTime: newStart });
       }
     } else if (trimmingClip) {
       const deltaX = e.clientX - trimmingClip.startX;
       const deltaTime = deltaX / zoomLevel;
 
-      if (trimmingClip.edge === 'left') {
-        const newStart = Math.max(0, trimmingClip.originalStart + deltaTime);
-        const newDuration = Math.max(0.3, trimmingClip.originalDuration - deltaTime);
-        updateClip(trimmingClip.id, { startTime: newStart, duration: newDuration });
-      } else {
-        const newDuration = Math.max(0.3, trimmingClip.originalDuration + deltaTime);
+      if (trimmingClip.edge === 'right') {
+        const newDuration = Math.max(0.5, trimmingClip.originalDuration + deltaTime);
         updateClip(trimmingClip.id, { duration: newDuration });
+      } else {
+        const maxDelta = trimmingClip.originalDuration - 0.5;
+        const boundedDeltaTime = Math.min(maxDelta, deltaTime);
+        const newStart = Math.max(0, trimmingClip.originalStart + boundedDeltaTime);
+        const newDuration = trimmingClip.originalDuration - (newStart - trimmingClip.originalStart);
+
+        updateClip(trimmingClip.id, {
+          startTime: newStart,
+          duration: newDuration,
+          mediaOffset: Math.max(0, (useTimelineStore.getState().tracks.flatMap((t) => t.clips).find((c) => c.id === trimmingClip.id)?.mediaOffset || 0) + boundedDeltaTime),
+        });
       }
     }
   };
@@ -293,10 +298,18 @@ export const Timeline: React.FC = () => {
     setTrimmingClip(null);
   };
 
+  const handleTrackScroll = () => {
+    if (trackContentContainerRef.current && trackHeaderContainerRef.current) {
+      trackHeaderContainerRef.current.scrollTop = trackContentContainerRef.current.scrollTop;
+    }
+  };
+
   const getTrackIcon = (type: MediaType) => {
     switch (type) {
       case 'video':
         return <Film className="w-3.5 h-3.5 text-cyan-400 shrink-0" />;
+      case 'image':
+        return <Layers className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
       case 'audio':
         return <Music className="w-3.5 h-3.5 text-green-400 shrink-0" />;
       case 'text':
@@ -324,30 +337,54 @@ export const Timeline: React.FC = () => {
 
   return (
     <div
-      className="h-64 bg-dark-800 border-t border-dark-700 flex flex-col select-none z-30 overflow-hidden relative"
+      className="h-64 bg-dark-950 border-t border-dark-800 flex flex-col select-none z-30 overflow-hidden relative shadow-2xl"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
       {/* Timeline Toolbar Bar */}
-      <div className="h-10 bg-dark-900/60 border-b border-dark-700 px-4 flex items-center justify-between overflow-x-auto scrollbar-none">
-        {/* Toolbar Buttons */}
-        <div className="flex items-center space-x-1 shrink-0">
-          <button
-            onClick={splitSelectedClip}
-            title="Razor Blade tool — Split clip at playhead (S or B)"
-            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
-          >
-            <Scissors className="w-3.5 h-3.5" />
-            <span>Blade (B)</span>
-          </button>
+      <div className="h-11 bg-dark-900 border-b border-dark-800 px-4 flex items-center justify-between overflow-x-auto no-scrollbar">
+        {/* Pointer / Blade Tool Selectors */}
+        <div className="flex items-center space-x-1.5 shrink-0">
+          <div className="flex items-center space-x-1 bg-dark-950 p-1 rounded-xl border border-dark-800">
+            <button
+              onClick={() => setActiveTool('select')}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                activeTool === 'select'
+                  ? 'bg-cyan-500 text-black font-black shadow-md'
+                  : 'text-gray-400 hover:text-white hover:bg-dark-800'
+              }`}
+              title="Pointer Selection Tool (V)"
+            >
+              <MousePointer className="w-3.5 h-3.5" />
+              <span>Select (V)</span>
+            </button>
+            <button
+              onClick={() => {
+                setActiveTool('blade');
+                splitSelectedClip();
+              }}
+              className={`flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                activeTool === 'blade'
+                  ? 'bg-cyan-500 text-black font-black shadow-md'
+                  : 'text-gray-400 hover:text-white hover:bg-dark-800'
+              }`}
+              title="Razor Blade Tool — Split clip at playhead (B)"
+            >
+              <Scissors className="w-3.5 h-3.5" />
+              <span>Blade (B)</span>
+            </button>
+          </div>
 
+          <div className="h-4 w-[1px] bg-dark-800" />
+
+          {/* Action Tools */}
           <button
             onClick={duplicateSelectedClip}
             title="Duplicate selected clip — Ctrl+D"
-            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-950 hover:bg-dark-800 text-gray-300 hover:text-cyan-300 rounded-xl text-xs font-bold border border-dark-800 transition"
           >
-            <Copy className="w-3.5 h-3.5" />
+            <Copy className="w-3.5 h-3.5 text-cyan-400" />
             <span>Duplicate</span>
           </button>
 
@@ -355,163 +392,132 @@ export const Timeline: React.FC = () => {
             onClick={groupSelectedClips}
             disabled={selectedClipIds.length < 2}
             title="Group selected clips — Ctrl+G"
-            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 disabled:opacity-30 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-950 hover:bg-dark-800 disabled:opacity-30 text-gray-300 rounded-xl text-xs font-bold border border-dark-800 transition"
           >
-            <FolderPlus className="w-3.5 h-3.5" />
+            <FolderPlus className="w-3.5 h-3.5 text-purple-400" />
             <span>Group</span>
-          </button>
-
-          <button
-            onClick={ungroupSelectedClips}
-            disabled={selectedClipIds.length === 0}
-            title="Ungroup selected clips — Ctrl+Shift+G"
-            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 disabled:opacity-30 text-gray-200 hover:text-cyan-400 rounded-md text-xs font-semibold transition"
-          >
-            <FolderMinus className="w-3.5 h-3.5" />
-            <span>Ungroup</span>
           </button>
 
           <button
             onClick={deleteSelectedClip}
             title="Delete selected clip — Delete"
-            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-red-400 rounded-md text-xs font-semibold transition"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-950 hover:bg-dark-800 text-gray-300 hover:text-red-400 rounded-xl text-xs font-bold border border-dark-800 transition"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-3.5 h-3.5 text-red-400" />
             <span>Delete</span>
           </button>
 
-          <div className="h-4 w-[1px] bg-dark-700 mx-1.5" />
-
           <button
             onClick={() => addMarker()}
-            title="Add marker at playhead — M"
-            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-700/60 hover:bg-dark-700 text-gray-200 hover:text-amber-400 rounded-md text-xs font-semibold transition"
+            title="Add Marker at playhead — M"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-dark-950 hover:bg-dark-800 text-gray-300 hover:text-amber-400 rounded-xl text-xs font-bold border border-dark-800 transition"
           >
-            <Bookmark className="w-3.5 h-3.5" />
-            <span>Marker</span>
+            <Bookmark className="w-3.5 h-3.5 text-amber-400" />
+            <span>Marker (M)</span>
           </button>
         </div>
 
-        {/* Snapping & Zoom Controls */}
+        {/* Snapping, Ripple & Zoom Slider */}
         <div className="flex items-center space-x-3 shrink-0">
           <button
             onClick={() => setSnappingEnabled(!snappingEnabled)}
-            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-xs font-semibold border transition ${
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded-xl text-xs font-bold transition border ${
               snappingEnabled
-                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
-                : 'bg-dark-800 text-gray-400 border-dark-700 hover:text-gray-200'
+                ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40 font-extrabold'
+                : 'bg-dark-950 text-gray-400 border-dark-800 hover:text-white'
             }`}
-            title="Toggle Magnet Snapping (Hold Shift to bypass)"
+            title="Magnetic Snapping (N)"
           >
             <Magnet className="w-3.5 h-3.5" />
-            <span>Magnet</span>
+            <span>Snap (N)</span>
           </button>
 
-          {/* Timeline Zoom Slider Controls */}
-          <div className="flex items-center space-x-1.5 bg-dark-800/80 px-2 py-1 rounded-lg border border-dark-700">
-            <button
-              onClick={() => setZoomLevel(zoomLevel * 0.75)}
-              className="text-gray-400 hover:text-white transition"
-              title="Zoom Out"
-            >
+          <button
+            onClick={() => setRippleDeleteEnabled(!rippleDeleteEnabled)}
+            className={`flex items-center space-x-1 px-2.5 py-1 rounded-xl text-xs font-bold transition border ${
+              rippleDeleteEnabled
+                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-extrabold'
+                : 'bg-dark-950 text-gray-400 border-dark-800 hover:text-white'
+            }`}
+            title="Ripple Auto-Gap Closure"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Ripple</span>
+          </button>
+
+          {/* Timeline Zoom Slider */}
+          <div className="flex items-center space-x-1.5 bg-dark-950 px-2 py-1 rounded-xl border border-dark-800">
+            <button onClick={() => setZoomLevel(Math.max(20, zoomLevel - 20))} className="text-gray-400 hover:text-white">
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-
             <input
               type="range"
               min="20"
               max="300"
               value={zoomLevel}
               onChange={(e) => setZoomLevel(parseInt(e.target.value, 10))}
-              className="w-20 accent-cyan-400 h-1 bg-dark-700 rounded cursor-pointer"
+              className="w-20 accent-cyan-400 bg-dark-900 rounded-lg h-1.5 cursor-pointer"
             />
-
-            <button
-              onClick={() => setZoomLevel(zoomLevel * 1.25)}
-              className="text-gray-400 hover:text-white transition"
-              title="Zoom In"
-            >
+            <button onClick={() => setZoomLevel(Math.min(300, zoomLevel + 20))} className="text-gray-400 hover:text-white">
               <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-
-            <span className="text-[10px] font-mono text-cyan-400 font-bold w-9 text-right">
-              {Math.round((zoomLevel / 100) * 100)}%
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={() => addTrack('video')}
-              className="p-1 text-gray-400 hover:text-cyan-400 hover:bg-dark-800 rounded transition"
-              title="Add Video Track"
-            >
-              <Film className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => addTrack('audio')}
-              className="p-1 text-gray-400 hover:text-green-400 hover:bg-dark-800 rounded transition"
-              title="Add Audio Track"
-            >
-              <Music className="w-4 h-4" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Track Workspace (Headers + Content Split Layout) */}
+      {/* Main Multitrack Workspace */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Track Headers List (Left Sidebar) */}
+        {/* Left Track Headers Drawer */}
         <div
           ref={trackHeaderContainerRef}
-          className="w-48 bg-dark-900/90 border-r border-dark-700 flex flex-col shrink-0 overflow-y-hidden select-none"
+          className="w-48 bg-dark-950 border-r border-dark-800 flex flex-col shrink-0 overflow-hidden divide-y divide-dark-800"
         >
-          {/* Header Gap for Ruler */}
-          <div className="h-6 bg-dark-900 border-b border-dark-700 border-r border-dark-700 shrink-0" />
+          {/* Header Top Empty Block (aligns with ruler height) */}
+          <div className="h-7 bg-dark-900/80 border-b border-dark-800 px-3 flex items-center justify-between">
+            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">TRACKS</span>
+            <div className="flex items-center space-x-1">
+              <button onClick={() => handleAddTrack('video')} className="text-cyan-400 hover:text-cyan-300 text-[10px] font-bold">+ Video</button>
+              <button onClick={() => handleAddTrack('audio')} className="text-green-400 hover:text-green-300 text-[10px] font-bold">+ Audio</button>
+            </div>
+          </div>
 
-          {/* Track Headers */}
-          <div className="flex-1 overflow-y-auto scrollbar-none">
+          {/* Track Headers List */}
+          <div className="flex-1 overflow-hidden space-y-px">
             {tracks.map((track) => (
               <div
                 key={track.id}
-                onContextMenu={(e) => handleTrackHeaderContextMenu(e, track.id)}
-                className={`h-14 px-3 border-b border-dark-700/60 flex items-center justify-between text-xs font-semibold group transition ${
-                  track.locked ? 'bg-dark-950/80 text-gray-500' : 'hover:bg-dark-800/80 text-gray-300'
+                className={`h-16 px-2.5 flex items-center justify-between border-b border-dark-800/80 transition ${
+                  track.locked ? 'bg-dark-900/60 opacity-60' : 'bg-dark-900/90 hover:bg-dark-900'
                 }`}
               >
-                <div className="flex items-center space-x-2 truncate pr-1">
+                <div className="flex items-center space-x-2 truncate">
                   {getTrackIcon(track.type)}
-                  <span className="truncate">{track.name}</span>
+                  <span className="text-xs font-extrabold text-gray-200 truncate w-24">{track.name}</span>
                 </div>
 
-                <div className="flex items-center space-x-1 opacity-70 group-hover:opacity-100 transition">
+                <div className="flex items-center space-x-1">
                   <button
                     onClick={() => toggleTrackMute(track.id)}
-                    className={`p-1 rounded hover:bg-dark-700 transition ${
-                      track.muted ? 'text-red-400' : 'text-gray-400 hover:text-white'
-                    }`}
+                    className={`p-1 rounded ${track.muted ? 'text-red-400 bg-red-500/20' : 'text-gray-400 hover:text-white'}`}
                     title={track.muted ? 'Unmute Track' : 'Mute Track'}
                   >
-                    {track.muted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
+                    {track.muted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
                   </button>
 
                   <button
                     onClick={() => toggleTrackHidden(track.id)}
-                    className={`p-1 rounded hover:bg-dark-700 transition ${
-                      track.hidden ? 'text-amber-400' : 'text-gray-400 hover:text-white'
-                    }`}
-                    title={track.hidden ? 'Unhide Track' : 'Hide Track'}
+                    className={`p-1 rounded ${track.hidden ? 'text-amber-400 bg-amber-500/20' : 'text-gray-400 hover:text-white'}`}
+                    title={track.hidden ? 'Show Track' : 'Hide Track'}
                   >
-                    {track.hidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                    {track.hidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                   </button>
 
                   <button
                     onClick={() => toggleTrackLocked(track.id)}
-                    className={`p-1 rounded hover:bg-dark-700 transition ${
-                      track.locked ? 'text-red-400' : 'text-gray-400 hover:text-white'
-                    }`}
+                    className={`p-1 rounded ${track.locked ? 'text-cyan-400 bg-cyan-500/20' : 'text-gray-400 hover:text-white'}`}
                     title={track.locked ? 'Unlock Track' : 'Lock Track'}
                   >
-                    {track.locked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                    {track.locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
                   </button>
                 </div>
               </div>
@@ -519,208 +525,106 @@ export const Timeline: React.FC = () => {
           </div>
         </div>
 
-        {/* Timeline Ruler & Track Content Workspace (Right Scrollable Area) */}
+        {/* Right Ruler & Clips Canvas Area */}
         <div
           ref={trackContentContainerRef}
-          className="flex-1 overflow-x-auto overflow-y-auto relative bg-dark-950 scrollbar-thin scrollbar-thumb-dark-700"
+          onScroll={handleTrackScroll}
+          className="flex-1 overflow-x-auto overflow-y-auto relative bg-dark-950"
         >
-          <div style={{ width: `${totalTimelineWidthPx}px`, minWidth: '100%' }} className="relative flex flex-col">
-            {/* Timeline Ruler Header */}
-            <div
-              ref={timelineRef}
-              onMouseDown={handleTimelineMouseDown}
-              className="h-6 bg-dark-900 border-b border-dark-700 sticky top-0 z-20 cursor-pointer select-none flex items-center"
-            >
-              {rulerTicks.map((time) => (
+          {/* Time Ruler */}
+          <div
+            onClick={handleRulerMouseDown}
+            className="h-7 bg-dark-900/90 border-b border-dark-800 relative cursor-pointer font-mono text-[10px] text-gray-400 font-bold shrink-0 sticky top-0 z-10"
+            style={{ width: `${totalTimelineWidthPx}px` }}
+          >
+            {rulerTicks.map((tickTime) => {
+              const posX = tickTime * zoomLevel;
+              return (
                 <div
-                  key={time}
-                  className="absolute top-0 bottom-0 border-l border-dark-700/80 flex items-end pb-0.5 pl-1"
-                  style={{ left: `${time * zoomLevel}px` }}
+                  key={tickTime}
+                  className="absolute top-0 bottom-0 border-l border-dark-700/80 pl-1 pt-1 pointer-events-none"
+                  style={{ left: `${posX}px` }}
                 >
-                  <span className="text-[9px] font-mono text-gray-400 select-none">{time}s</span>
+                  {tickTime}s
                 </div>
-              ))}
+              );
+            })}
 
-              {/* Markers */}
-              {markers.map((marker) => (
+            {/* Timeline Markers */}
+            {markers.map((marker) => {
+              const mX = marker.time * zoomLevel;
+              return (
                 <div
                   key={marker.id}
-                  onContextMenu={(e) => handleMarkerContextMenu(e, marker.id)}
-                  className="absolute top-0 bottom-0 w-0.5 z-20 cursor-pointer group"
-                  style={{ left: `${marker.time * zoomLevel}px`, backgroundColor: marker.color }}
-                  title={`${marker.label} at ${marker.time.toFixed(2)}s`}
-                >
-                  <div
-                    className="w-3 h-3 -ml-1.5 top-0 absolute rounded-b-md shadow"
-                    style={{ backgroundColor: marker.color }}
-                  />
-                </div>
-              ))}
-            </div>
+                  className="absolute top-0 w-3 h-4 bg-amber-400 clip-path-polygon cursor-pointer z-20"
+                  style={{ left: `${mX - 6}px` }}
+                  title={`Marker: ${marker.label} @ ${marker.time.toFixed(2)}s`}
+                />
+              );
+            })}
+          </div>
 
-            {/* Playhead Line */}
+          {/* Tracks Clips Canvas */}
+          <div className="relative space-y-px" style={{ width: `${totalTimelineWidthPx}px` }}>
+            {/* Playhead Red Indicator Line */}
             <div
-              className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-30 pointer-events-none shadow-[0_0_8px_rgba(0,242,254,0.8)]"
+              className="absolute top-0 bottom-0 w-0.5 bg-cyan-400 z-30 pointer-events-none shadow-lg shadow-cyan-500/50"
               style={{ left: `${currentTime * zoomLevel}px` }}
             >
-              <div className="w-3 h-3 -ml-1.5 top-0 absolute bg-cyan-400 rotate-45 rounded-sm shadow" />
+              <div className="w-3 h-3 bg-cyan-400 rotate-45 -translate-x-[5px] -translate-y-1.5 shadow-md" />
             </div>
 
-            {/* Tracks Content */}
-            <div className="flex-1 flex flex-col">
-              {tracks.map((track) => (
-                <div
-                  key={track.id}
-                  className={`h-14 border-b border-dark-800/80 relative flex items-center transition ${
-                    track.hidden ? 'opacity-30' : ''
-                  }`}
-                >
-                  {track.clips.map((clip) => {
-                    const isSelected = selectedClipIds.includes(clip.id);
-                    const clipWidthPx = clip.duration * zoomLevel;
-                    const clipLeftPx = clip.startTime * zoomLevel;
+            {tracks.map((track) => (
+              <div
+                key={track.id}
+                className={`h-16 relative border-b border-dark-800/80 ${
+                  track.locked ? 'bg-dark-950/40' : 'bg-dark-900/40'
+                }`}
+              >
+                {track.clips.map((clip) => {
+                  const clipX = clip.startTime * zoomLevel;
+                  const clipW = clip.duration * zoomLevel;
+                  const isSelected = selectedClipId === clip.id || selectedClipIds.includes(clip.id);
 
-                    return (
+                  let clipColorClass = 'bg-cyan-900/80 border-cyan-500/60 text-cyan-200';
+                  if (clip.type === 'audio') clipColorClass = 'bg-green-900/80 border-green-500/60 text-green-200';
+                  else if (clip.type === 'text') clipColorClass = 'bg-purple-900/80 border-purple-500/60 text-purple-200';
+                  else if (clip.type === 'caption') clipColorClass = 'bg-amber-900/80 border-amber-500/60 text-amber-200';
+                  else if (clip.type === 'image') clipColorClass = 'bg-blue-900/80 border-blue-500/60 text-blue-200';
+
+                  return (
+                    <div
+                      key={clip.id}
+                      onMouseDown={(e) => handleClipMouseDown(e, clip, track)}
+                      className={`absolute top-1.5 bottom-1.5 rounded-xl border-2 px-2 flex items-center justify-between cursor-move overflow-hidden transition shadow-md ${clipColorClass} ${
+                        isSelected ? 'ring-2 ring-cyan-400 ring-offset-2 ring-offset-dark-950 scale-[1.01] z-20 font-black' : ''
+                      }`}
+                      style={{ left: `${clipX}px`, width: `${clipW}px` }}
+                    >
+                      {/* Left Trim Handle */}
                       <div
-                        key={clip.id}
-                        onMouseDown={(e) => handleClipMouseDown(e, clip, track)}
-                        onContextMenu={(e) => handleClipContextMenu(e, clip.id)}
-                        className={`absolute h-10 rounded-lg flex items-center justify-between px-2 cursor-pointer transition-all border ${
-                          isSelected
-                            ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200 shadow-lg shadow-cyan-500/10'
-                            : clip.groupId
-                            ? 'bg-purple-900/50 border-purple-500/50 text-purple-200'
-                            : 'bg-dark-700/80 border-dark-600 hover:border-gray-400 text-gray-200'
-                        }`}
-                        style={{
-                          left: `${clipLeftPx}px`,
-                          width: `${clipWidthPx}px`,
-                        }}
-                      >
-                        {/* Trim Left Handle */}
-                        <div
-                          onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
-                          className="absolute left-0 top-0 bottom-0 w-2 hover:bg-cyan-400/60 rounded-l cursor-ew-resize z-10"
-                          title="Trim Left Edge"
-                        />
+                        onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'left')}
+                        className="absolute left-0 top-0 bottom-0 w-2.5 bg-cyan-400/40 hover:bg-cyan-400 cursor-ew-resize rounded-l-xl z-20"
+                      />
 
-                        {/* Clip Name */}
-                        <span className="text-[11px] font-bold truncate select-none z-0 px-1">
-                          {clip.name} {clip.groupId ? '🔗' : ''}
-                        </span>
-
-                        {/* Trim Right Handle */}
-                        <div
-                          onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'right')}
-                          className="absolute right-0 top-0 bottom-0 w-2 hover:bg-cyan-400/60 rounded-r cursor-ew-resize z-10"
-                          title="Trim Right Edge"
-                        />
+                      <div className="flex items-center space-x-1.5 truncate pointer-events-none">
+                        {getTrackIcon(clip.type)}
+                        <span className="text-xs font-bold truncate">{clip.name}</span>
                       </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+
+                      {/* Right Trim Handle */}
+                      <div
+                        onMouseDown={(e) => handleTrimMouseDown(e, clip, track, 'right')}
+                        className="absolute right-0 top-0 bottom-0 w-2.5 bg-cyan-400/40 hover:bg-cyan-400 cursor-ew-resize rounded-r-xl z-20"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         </div>
       </div>
-
-      {/* Clip Context Menu */}
-      {clipContextMenu && (
-        <div
-          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs font-semibold text-gray-200 w-44"
-          style={{ left: clipContextMenu.x, top: clipContextMenu.y }}
-        >
-          <button
-            onClick={() => {
-              splitSelectedClip();
-              setClipContextMenu(null);
-            }}
-            className="w-full px-3 py-1.5 hover:bg-dark-800 text-left flex items-center space-x-2"
-          >
-            <Scissors className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Split Clip (S)</span>
-          </button>
-          <button
-            onClick={() => {
-              duplicateSelectedClip();
-              setClipContextMenu(null);
-            }}
-            className="w-full px-3 py-1.5 hover:bg-dark-800 text-left flex items-center space-x-2"
-          >
-            <Copy className="w-3.5 h-3.5 text-blue-400" />
-            <span>Duplicate (Ctrl+D)</span>
-          </button>
-          <button
-            onClick={() => {
-              groupSelectedClips();
-              setClipContextMenu(null);
-            }}
-            className="w-full px-3 py-1.5 hover:bg-dark-800 text-left flex items-center space-x-2"
-          >
-            <FolderPlus className="w-3.5 h-3.5 text-purple-400" />
-            <span>Group Clips</span>
-          </button>
-          <button
-            onClick={() => {
-              ungroupSelectedClips();
-              setClipContextMenu(null);
-            }}
-            className="w-full px-3 py-1.5 hover:bg-dark-800 text-left flex items-center space-x-2"
-          >
-            <FolderMinus className="w-3.5 h-3.5 text-amber-400" />
-            <span>Ungroup Clips</span>
-          </button>
-          <button
-            onClick={() => {
-              deleteSelectedClip();
-              setClipContextMenu(null);
-            }}
-            className="w-full px-3 py-1.5 hover:bg-dark-800 text-left flex items-center space-x-2 text-red-400"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete Clip</span>
-          </button>
-        </div>
-      )}
-
-      {/* Marker Context Menu */}
-      {markerContextMenu && (
-        <div
-          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs font-semibold text-gray-200 w-36"
-          style={{ left: markerContextMenu.x, top: markerContextMenu.y }}
-        >
-          <button
-            onClick={() => {
-              removeMarker(markerContextMenu.markerId);
-              setMarkerContextMenu(null);
-            }}
-            className="w-full px-3 py-1.5 hover:bg-dark-800 text-left text-red-400 flex items-center space-x-2"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete Marker</span>
-          </button>
-        </div>
-      )}
-
-      {/* Track Context Menu */}
-      {trackContextMenu && (
-        <div
-          className="fixed bg-dark-900 border border-dark-700 rounded-xl shadow-2xl py-1.5 z-50 text-xs font-semibold text-gray-200 w-40"
-          style={{ left: trackContextMenu.x, top: trackContextMenu.y }}
-        >
-          <button
-            onClick={() => {
-              handleDeleteTrackSafely(trackContextMenu.trackId);
-              setTrackContextMenu(null);
-            }}
-            className="w-full px-3 py-1.5 hover:bg-dark-800 text-left text-red-400 flex items-center space-x-2"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Delete Track</span>
-          </button>
-        </div>
-      )}
     </div>
   );
 };

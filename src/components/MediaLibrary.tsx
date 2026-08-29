@@ -12,6 +12,9 @@ import {
   FolderOpen,
   Search,
   Sparkles,
+  LayoutGrid,
+  List,
+  Film,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { saveMediaAssetBlob, deleteMediaAssetBlob } from '../utils/projectPersistence';
@@ -20,6 +23,7 @@ import { MediaType, MediaAsset } from '../types/timeline';
 export const MediaLibrary: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'all' | 'video' | 'audio' | 'image'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [isHoveringDropzone, setIsHoveringDropzone] = useState(false);
 
   const {
@@ -88,6 +92,34 @@ export const MediaLibrary: React.FC = () => {
     }
   };
 
+  const handleLoadSampleAsset = () => {
+    // Generate sample color bar card asset
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const grad = ctx.createLinearGradient(0, 0, 1280, 720);
+      grad.addColorStop(0, '#06b6d4');
+      grad.addColorStop(0.5, '#3b82f6');
+      grad.addColorStop(1, '#8b5cf6');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 1280, 720);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 64px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('AK CUT SAMPLE MEDIA', 640, 360);
+
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const file = new File([blob], 'sample_graphic.png', { type: 'image/png' });
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        handleFileUpload(dataTransfer.files);
+      });
+    }
+  };
+
   const filteredAssets = mediaAssets.filter((asset) => {
     const matchesTab = activeTab === 'all' || asset.type === activeTab;
     const matchesSearch = asset.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -98,6 +130,29 @@ export const MediaLibrary: React.FC = () => {
     <aside className="w-80 bg-dark-900 border-r border-dark-700 flex flex-col h-full select-none z-20 overflow-hidden">
       {/* Search & Header */}
       <div className="p-3 border-b border-dark-700 space-y-2 bg-dark-900/80">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-1.5">
+            <FolderOpen className="w-4 h-4 text-cyan-400" />
+            <span>PROJECT ASSETS</span>
+          </h3>
+          <div className="flex items-center space-x-1 bg-dark-950 p-0.5 rounded-lg border border-dark-800">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1 rounded transition ${viewMode === 'grid' ? 'bg-cyan-500/20 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
+              title="Grid View"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1 rounded transition ${viewMode === 'list' ? 'bg-cyan-500/20 text-cyan-400' : 'text-gray-400 hover:text-white'}`}
+              title="List View"
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
         <div className="relative">
           <Search className="w-3.5 h-3.5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -105,7 +160,7 @@ export const MediaLibrary: React.FC = () => {
             placeholder="Search media..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full bg-dark-800 border border-dark-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-500"
+            className="w-full bg-dark-950 border border-dark-700 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder-gray-500 outline-none focus:border-cyan-400"
           />
         </div>
 
@@ -141,7 +196,7 @@ export const MediaLibrary: React.FC = () => {
           className={`border-2 border-dashed rounded-2xl p-4 flex flex-col items-center justify-center text-center cursor-pointer transition ${
             isHoveringDropzone
               ? 'border-cyan-400 bg-cyan-500/10'
-              : 'border-dark-700 hover:border-cyan-500/50 bg-dark-800/40 hover:bg-dark-800/80'
+              : 'border-dark-700 hover:border-cyan-500/50 bg-dark-950/60 hover:bg-dark-950'
           }`}
         >
           <Upload className="w-6 h-6 text-cyan-400 mb-1 animate-bounce" />
@@ -157,32 +212,86 @@ export const MediaLibrary: React.FC = () => {
         </label>
       </div>
 
-      {/* Media Items Grid */}
+      {/* Media Items Grid / List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {filteredAssets.length === 0 ? (
-          <div className="text-center py-8 text-xs text-gray-500 space-y-1">
-            <FolderOpen className="w-8 h-8 mx-auto text-gray-600 mb-1" />
-            <p>No media files found</p>
-            <p className="text-[10px] text-gray-600">Import media to start editing on timeline</p>
+          <div className="p-6 text-center border border-dashed border-dark-800 rounded-2xl bg-dark-950/40 space-y-3">
+            <Film className="w-10 h-10 mx-auto text-gray-600 mb-1" />
+            <h4 className="text-xs font-bold text-gray-300">Start Creating</h4>
+            <p className="text-[10px] text-gray-500">Import your first video, image, or audio file to begin editing.</p>
+            <button
+              onClick={handleLoadSampleAsset}
+              className="px-3 py-1.5 bg-dark-800 hover:bg-dark-700 text-cyan-300 border border-cyan-500/40 rounded-xl text-xs font-bold transition inline-flex items-center space-x-1"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Load Sample Graphic</span>
+            </button>
+          </div>
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-2 gap-2">
+            {filteredAssets.map((asset) => (
+              <div
+                key={asset.id}
+                className="p-2 bg-dark-950 border border-dark-800 hover:border-cyan-400 rounded-2xl flex flex-col justify-between group transition relative overflow-hidden h-24"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-6 h-6 rounded-lg bg-dark-900 border border-dark-700 flex items-center justify-center text-cyan-400">
+                    {asset.type === 'video' ? <Video className="w-3.5 h-3.5" /> : asset.type === 'audio' ? <Music className="w-3.5 h-3.5" /> : <ImageIcon className="w-3.5 h-3.5" />}
+                  </div>
+                  <span className="text-[9px] font-mono text-gray-400 font-bold bg-dark-900 px-1.5 py-0.5 rounded">{asset.duration}s</span>
+                </div>
+
+                <div className="truncate">
+                  <h4 className="text-[11px] font-bold text-gray-200 truncate">{asset.name}</h4>
+                  <span className="text-[9px] text-gray-500 font-mono">{(asset.size / (1024 * 1024)).toFixed(1)} MB</span>
+                </div>
+
+                {/* Hover Quick Action Overlay */}
+                <div className="absolute inset-0 bg-dark-950/90 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition flex items-center justify-center space-x-2">
+                  <button
+                    onClick={() => {
+                      let targetTrack = tracks.find((t) => t.type === asset.type);
+                      let targetTrackId = targetTrack?.id || addTrack(asset.type);
+                      const clipId = addClipToTrack(targetTrackId, {
+                        name: asset.name,
+                        type: asset.type,
+                        assetId: asset.id,
+                        src: asset.src,
+                        duration: asset.duration,
+                        sourceDuration: asset.duration,
+                        mediaOffset: 0,
+                      });
+                      setSelectedClipId(clipId);
+                    }}
+                    className="p-2 bg-cyan-500 hover:bg-cyan-400 text-black font-extrabold rounded-xl transition"
+                    title="Add to timeline"
+                  >
+                    <Plus className="w-4 h-4 stroke-[3]" />
+                  </button>
+
+                  <button
+                    onClick={() => deleteMediaAsset(asset.id)}
+                    className="p-2 bg-dark-800 hover:bg-red-500/20 text-gray-400 hover:text-red-400 rounded-xl transition"
+                    title="Delete media asset"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           filteredAssets.map((asset) => (
             <div
               key={asset.id}
-              className="p-2 bg-dark-800 border border-dark-700 hover:border-cyan-500/50 rounded-xl flex items-center justify-between group transition"
+              className="p-2.5 bg-dark-950 border border-dark-800 hover:border-cyan-400 rounded-xl flex items-center justify-between group transition"
             >
               <div className="flex items-center space-x-2.5 truncate">
                 <div className="w-8 h-8 rounded-lg bg-dark-900 border border-dark-700 flex items-center justify-center text-cyan-400 shrink-0">
-                  {asset.type === 'video' ? (
-                    <Video className="w-4 h-4" />
-                  ) : asset.type === 'audio' ? (
-                    <Music className="w-4 h-4" />
-                  ) : (
-                    <ImageIcon className="w-4 h-4" />
-                  )}
+                  {asset.type === 'video' ? <Video className="w-4 h-4" /> : asset.type === 'audio' ? <Music className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
                 </div>
                 <div className="truncate">
-                  <h4 className="text-xs font-semibold text-gray-200 truncate">{asset.name}</h4>
+                  <h4 className="text-xs font-bold text-gray-200 truncate">{asset.name}</h4>
                   <span className="text-[10px] text-gray-500 font-mono">
                     {asset.duration}s • {(asset.size / (1024 * 1024)).toFixed(1)} MB
                   </span>
@@ -205,15 +314,15 @@ export const MediaLibrary: React.FC = () => {
                     });
                     setSelectedClipId(clipId);
                   }}
-                  className="p-1 text-cyan-400 hover:bg-cyan-500/20 rounded transition"
+                  className="p-1.5 text-cyan-400 hover:bg-cyan-500/20 rounded-lg transition"
                   title="Add to timeline"
                 >
-                  <Plus className="w-4 h-4" />
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
                 </button>
 
                 <button
                   onClick={() => deleteMediaAsset(asset.id)}
-                  className="p-1 text-gray-500 hover:text-red-400 rounded transition opacity-0 group-hover:opacity-100"
+                  className="p-1.5 text-gray-500 hover:text-red-400 rounded-lg transition opacity-0 group-hover:opacity-100"
                   title="Delete media asset"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -225,13 +334,13 @@ export const MediaLibrary: React.FC = () => {
       </div>
 
       {/* Quick Add Text Action */}
-      <div className="p-3 border-t border-dark-700 bg-dark-900/90">
+      <div className="p-3 border-t border-dark-800 bg-dark-950/90">
         <button
           onClick={() => addTextClipDirectlyOnCanvas('Type Text Here')}
-          className="w-full py-2 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-gray-200 font-bold text-xs rounded-xl transition flex items-center justify-center space-x-1.5"
+          className="w-full py-2.5 bg-dark-800 hover:bg-dark-700 border border-dark-700 text-gray-200 font-bold text-xs rounded-xl transition flex items-center justify-center space-x-1.5"
         >
-          <FileText className="w-3.5 h-3.5 text-cyan-400" />
-          <span>+ Add Text Clip</span>
+          <FileText className="w-4 h-4 text-cyan-400" />
+          <span>+ Add Text Layer</span>
         </button>
       </div>
     </aside>
