@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:engine": "tsc --noEmit"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",
