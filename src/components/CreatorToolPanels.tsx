@@ -18,11 +18,12 @@ import {
   CheckCircle,
   Eye,
   Grid,
+  Search,
 } from 'lucide-react';
 import { useTimelineStore } from '../store/timelineStore';
 import { CreatorNavTab } from './CreatorNavRail';
 import { TransitionType, MaskType } from '../types/timeline';
-import { SPEED_CURVE_PRESETS } from '../utils/speedEngine';
+import { TEXT_PRESETS } from '../utils/textRenderEngine';
 
 interface CreatorToolPanelsProps {
   activeTab: CreatorNavTab;
@@ -60,6 +61,21 @@ const TRANSITION_PRESETS: { type: TransitionType; name: string; icon: string }[]
   { type: 'blur', name: 'Motion Blur', icon: '💧' },
 ];
 
+const QUICK_TEXT_TEMPLATES = [
+  { id: 'title', label: 'Cinematic Hero Title', text: 'HERO TITLE', font: 'Bebas Neue, sans-serif', color: '#00f2fe', bg: '#000000' },
+  { id: 'subtitle', label: 'Clean Modern Subtitle', text: 'Modern Subtitle Text', font: 'Inter, sans-serif', color: '#ffffff', bg: 'transparent' },
+  { id: 'lowerThird', label: 'Speaker Name Banner', text: 'ARAVIND KUMAR • DIRECTOR', font: 'Montserrat, sans-serif', color: '#ffffff', bg: '#121214' },
+  { id: 'socialHeadline', label: 'Social Viral Headline', text: 'MUST WATCH VIDEO!', font: 'Impact, sans-serif', color: '#eab308', bg: '#000000' },
+  { id: 'news', label: 'Breaking News Ticker', text: 'BREAKING NEWS ALERTS', font: 'Oswald, sans-serif', color: '#ef4444', bg: '#ffffff' },
+  { id: 'youtube', label: 'YouTube Subscribe Banner', text: 'LIKE & SUBSCRIBE', font: 'Poppins, sans-serif', color: '#ffffff', bg: '#ef4444' },
+  { id: 'instagram', label: 'Instagram Story Tag', text: '@AK_CUT_STUDIO', font: 'Montserrat, sans-serif', color: '#ec4899', bg: 'transparent' },
+  { id: 'tiktok', label: 'TikTok Trend Caption', text: 'Wait for the end... 😱', font: 'Inter, sans-serif', color: '#ffffff', bg: '#000000' },
+  { id: 'cinematic', label: 'Film Credits Title', text: 'DIRECTED BY AK', font: 'Playfair Display, serif', color: '#fef08a', bg: 'transparent' },
+  { id: 'sports', label: 'Sports Scoreboard Title', text: 'GAME DAY HIGHLIGHTS', font: 'Impact, sans-serif', color: '#22c55e', bg: '#000000' },
+  { id: 'gaming', label: 'Arcade Gaming Title', text: 'VICTORY ROYALE', font: 'Bebas Neue, sans-serif', color: '#a855f7', bg: '#000000' },
+  { id: 'quote', label: 'Minimal Quote Header', text: '“Creation is Intelligence.”', font: 'Georgia, serif', color: '#cbd5e1', bg: 'transparent' },
+];
+
 export const CreatorToolPanels: React.FC<CreatorToolPanelsProps> = ({
   activeTab,
   onOpenCaptionsModal,
@@ -68,12 +84,14 @@ export const CreatorToolPanels: React.FC<CreatorToolPanelsProps> = ({
   onOpenStickersModal,
   onOpenPresetsModal,
 }) => {
+  const [searchQuery, setSearchQuery] = useState('');
   const {
     addTextClipDirectlyOnCanvas,
     selectedClipId,
     tracks,
     updateClip,
     updateClipFilter,
+    updateClipText,
     pushHistory,
   } = useTimelineStore();
 
@@ -110,6 +128,18 @@ export const CreatorToolPanels: React.FC<CreatorToolPanelsProps> = ({
         feather: 10,
       },
     });
+  };
+
+  const handleAddTemplateText = (tpl: typeof QUICK_TEXT_TEMPLATES[0]) => {
+    addTextClipDirectlyOnCanvas(tpl.text);
+    if (selectedClipId) {
+      updateClipText(selectedClipId, {
+        fontFamily: tpl.font,
+        color: tpl.color,
+        backgroundColor: tpl.bg,
+        backgroundEnabled: tpl.bg !== 'transparent',
+      });
+    }
   };
 
   return (
@@ -173,29 +203,52 @@ export const CreatorToolPanels: React.FC<CreatorToolPanelsProps> = ({
           <div className="border-b border-dark-800 pb-2">
             <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center space-x-1.5">
               <Type className="w-4 h-4 text-cyan-400" />
-              <span>TEXT & SUBTITLES</span>
+              <span>TEXT & CREATOR TEMPLATES</span>
             </h3>
-            <p className="text-[10px] text-gray-400 mt-0.5">Add text layers, style presets, & auto-captions</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">Add text layers, auto-captions, & styled title templates</p>
           </div>
 
           <button
             onClick={() => addTextClipDirectlyOnCanvas()}
-            className="w-full py-3 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs rounded-2xl transition shadow-xl flex items-center justify-center space-x-2"
+            className="w-full py-3 bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-extrabold text-xs rounded-2xl transition shadow-xl flex items-center justify-center space-x-2"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
-            <span>+ Add Text Layer</span>
+            <span>+ Add Blank Text Layer</span>
           </button>
 
           <button
             onClick={onOpenPresetsModal}
-            className="w-full p-3 bg-dark-950 border border-cyan-500/30 hover:border-cyan-400 rounded-2xl text-left transition flex items-center space-x-3"
+            className="w-full p-2.5 bg-dark-950 border border-cyan-500/30 hover:border-cyan-400 rounded-2xl text-left transition flex items-center space-x-3"
           >
             <Sparkles className="w-5 h-5 text-cyan-400" />
             <div>
-              <h4 className="text-xs font-bold text-white">Browse Text Presets</h4>
+              <h4 className="text-xs font-bold text-white">Full Text Presets Gallery</h4>
               <p className="text-[10px] text-gray-400">18 pre-styled creator titles & lower thirds</p>
             </div>
           </button>
+
+          {/* VISUAL TEXT TEMPLATE CARDS */}
+          <div className="space-y-2">
+            <span className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider block">VISUAL TITLE TEMPLATES</span>
+            <div className="grid grid-cols-2 gap-2">
+              {QUICK_TEXT_TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  onClick={() => handleAddTemplateText(tpl)}
+                  className="p-2.5 bg-dark-950 hover:bg-dark-850 border border-dark-800 hover:border-cyan-400 rounded-2xl text-left transition transform hover:scale-[1.02] flex flex-col justify-between h-22 group"
+                >
+                  <span className="text-[9px] font-bold text-gray-400 truncate uppercase">{tpl.label}</span>
+                  <span
+                    className="text-xs font-bold truncate my-1"
+                    style={{ fontFamily: tpl.font, color: tpl.color, backgroundColor: tpl.bg !== 'transparent' ? tpl.bg : undefined, padding: tpl.bg !== 'transparent' ? '2px 4px' : undefined, borderRadius: '4px' }}
+                  >
+                    {tpl.text}
+                  </span>
+                  <span className="text-[9px] text-cyan-400 font-bold group-hover:underline">+ Add to Canvas</span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
@@ -278,7 +331,7 @@ export const CreatorToolPanels: React.FC<CreatorToolPanelsProps> = ({
                       pushHistory();
                       updateClipFilter(selectedClip!.id, { presetKey: f.key, presetIntensity: 80 });
                     }}
-                    className="p-2 bg-dark-950 hover:bg-dark-800 border border-dark-700 hover:border-cyan-400 rounded-xl text-left transition"
+                    className="p-2.5 bg-dark-950 hover:bg-dark-800 border border-dark-700 hover:border-cyan-400 rounded-xl text-left transition"
                   >
                     <span className="text-xs font-bold text-white block truncate">{f.name}</span>
                     <span className="text-[9px] text-cyan-400">Apply Preset</span>
