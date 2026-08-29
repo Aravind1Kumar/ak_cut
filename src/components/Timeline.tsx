@@ -121,11 +121,18 @@ export const Timeline: React.FC = () => {
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault();
         duplicateSelectedClip();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        e.preventDefault();
+        useTimelineStore.getState().copySelectedClip();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        useTimelineStore.getState().pasteClipAtPlayhead();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
         e.preventDefault();
         if (e.shiftKey) ungroupSelectedClips();
         else groupSelectedClips();
       }
+
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -657,6 +664,26 @@ export const Timeline: React.FC = () => {
           </button>
           <button
             onClick={() => {
+              useTimelineStore.getState().copySelectedClip();
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-lg flex items-center justify-between"
+          >
+            <span>Copy Clip</span>
+            <span className="text-[10px] text-gray-500">Ctrl+C</span>
+          </button>
+          <button
+            onClick={() => {
+              useTimelineStore.getState().pasteClipAtPlayhead();
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-lg flex items-center justify-between"
+          >
+            <span>Paste Clip</span>
+            <span className="text-[10px] text-gray-500">Ctrl+V</span>
+          </button>
+          <button
+            onClick={() => {
               duplicateSelectedClip();
               setClipContextMenu(null);
             }}
@@ -665,6 +692,7 @@ export const Timeline: React.FC = () => {
             <span>Duplicate</span>
             <span className="text-[10px] text-gray-500">Ctrl+D</span>
           </button>
+
           <button
             onClick={() => {
               detachAudioFromSelectedClip();
