@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test:engine": "tsc --noEmit"
+    "test:engine": "npx tsx src/utils/runEngineTest.ts"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",

@@ -31,17 +31,19 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   const test1Pass = Math.abs(srcTime - 4.5) < 0.001;
   results.push(`Test 1 (Linear Source Time Mapping): ${test1Pass ? 'PASS' : 'FAIL'} (Expected 4.5, Got ${srcTime})`);
 
-  // Test 2: Slip Edit Math
+  // Test 2: Slip Edit Math & Boundary Clamping
   const slipped = slipClip(mockClip, 3);
-  const test2Pass = slipped.startTime === 10 && slipped.duration === 5 && slipped.mediaOffset === 5;
-  results.push(`Test 2 (Slip Edit Math): ${test2Pass ? 'PASS' : 'FAIL'} (MediaOffset: ${slipped.mediaOffset})`);
+  const slippedMax = slipClip(mockClip, 100);
+  const test2Pass = slipped.startTime === 10 && slipped.duration === 5 && slipped.mediaOffset === 5 && slippedMax.mediaOffset === 15;
+  results.push(`Test 2 (Slip Edit Math & Clamping): ${test2Pass ? 'PASS' : 'FAIL'} (MediaOffset: ${slipped.mediaOffset}, MaxClamped: ${slippedMax.mediaOffset})`);
 
-  // Test 3: Roll Edit Math
+  // Test 3: Roll Edit Math & Min Duration Protection
   const left: Clip = { ...mockClip, id: 'left', startTime: 0, duration: 4 };
   const right: Clip = { ...mockClip, id: 'right', startTime: 4, duration: 6, mediaOffset: 0 };
   const rolled = rollEdit(left, right, 1);
-  const test3Pass = rolled.left.duration === 5 && rolled.right.startTime === 5 && rolled.right.duration === 5;
-  results.push(`Test 3 (Roll Edit Math): ${test3Pass ? 'PASS' : 'FAIL'} (Left Dur: ${rolled.left.duration}, Right Start: ${rolled.right.startTime})`);
+  const rolledExtreme = rollEdit(left, right, 100);
+  const test3Pass = rolled.left.duration === 5 && rolled.right.startTime === 5 && rolled.right.duration === 5 && rolledExtreme.right.duration === 0.1;
+  results.push(`Test 3 (Roll Edit Math & Bounds Protection): ${test3Pass ? 'PASS' : 'FAIL'} (Left Dur: ${rolled.left.duration}, Right Start: ${rolled.right.startTime}, MinRightDur: ${rolledExtreme.right.duration})`);
 
   // Test 4: Slide Edit Math (Explicit Assertions)
   const clipA: Clip = { ...mockClip, id: 'clipA', startTime: 0, duration: 5 };
@@ -84,6 +86,20 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   });
   results.push(`Test 7 (Canonical Timeline → Source Mapping Determinism): ${determinismPass ? 'PASS' : 'FAIL'} (Expected ${expectedValues.join(', ')})`);
 
-  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass;
+  // Test 8: Speed Curves Deterministic Integral Mapping (HERO, MONTAGE, BULLET TIME, FLASH OUT)
+  const heroClip: Clip = { ...mockClip, speedCurve: 'hero' };
+  const montageClip: Clip = { ...mockClip, speedCurve: 'montage' };
+  const bulletClip: Clip = { ...mockClip, speedCurve: 'bulletTime' };
+  const flashClip: Clip = { ...mockClip, speedCurve: 'flashOut' };
+
+  const heroTime = mapTimelineTimeToSourceTime(heroClip, 2.5);
+  const montageTime = mapTimelineTimeToSourceTime(montageClip, 2.5);
+  const bulletTime = mapTimelineTimeToSourceTime(bulletClip, 2.5);
+  const flashTime = mapTimelineTimeToSourceTime(flashClip, 2.5);
+
+  const test8Pass = heroTime > 0 && montageTime > 0 && bulletTime > 0 && flashTime > 0;
+  results.push(`Test 8 (Speed Curves Deterministic Integrals): ${test8Pass ? 'PASS' : 'FAIL'} (Hero: ${heroTime.toFixed(2)}, Montage: ${montageTime.toFixed(2)}, Bullet: ${bulletTime.toFixed(2)}, Flash: ${flashTime.toFixed(2)})`);
+
+  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass;
   return { passed, results };
 }
