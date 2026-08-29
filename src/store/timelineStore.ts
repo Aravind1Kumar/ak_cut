@@ -26,6 +26,8 @@ import {
   restoreProjectWithMediaBlobs,
   createManagedObjectURL,
 } from '../utils/projectPersistence';
+import { slipClip, slideClip, rollEdit, insertClip, overwriteClip } from '../utils/timelineMath';
+
 
 const DEFAULT_TRANSFORM: TransformProps = {
   x: 0,
@@ -160,6 +162,13 @@ interface TimelineState {
   copySelectedClipTextStyle: () => void;
   pasteSelectedClipTextStyle: () => void;
   resetSelectedClipTextStyle: () => void;
+
+  slipSelectedClip: (offsetDelta: number) => void;
+  slideSelectedClip: (timeDelta: number) => void;
+  rollSelectedClip: (neighborClipId: string, delta: number) => void;
+  insertClipAtPlayhead: (trackId: string, clipData: Partial<Clip>) => void;
+  overwriteClipAtPlayhead: (trackId: string, clipData: Partial<Clip>) => void;
+
 
   beginTransaction: () => void;
   commitTransaction: () => void;
@@ -887,6 +896,90 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
       glowEnabled: false,
     });
   },
+
+  slipSelectedClip: (offsetDelta: number) => {
+    const { selectedClipId, pushHistory, saveProjectToDB } = get();
+    if (!selectedClipId) return;
+    pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => (c.id === selectedClipId ? slipClip(c, offsetDelta) : c)),
+      })),
+    }));
+    saveProjectToDB();
+  },
+
+  slideSelectedClip: (timeDelta: number) => {
+    const { selectedClipId, pushHistory, saveProjectToDB } = get();
+    if (!selectedClipId) return;
+    pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((t) => {
+        const hasClip = t.clips.some((c) => c.id === selectedClipId);
+        return hasClip ? { ...t, clips: slideClip(t.clips, selectedClipId, timeDelta) } : t;
+      }),
+    }));
+    saveProjectToDB();
+  },
+
+  rollSelectedClip: (neighborClipId: string, delta: number) => {
+    const { selectedClipId, pushHistory, saveProjectToDB } = get();
+    if (!selectedClipId) return;
+    pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((t) => {
+        const leftIndex = t.clips.findIndex((c) => c.id === selectedClipId);
+        const rightIndex = t.clips.findIndex((c) => c.id === neighborClipId);
+        if (leftIndex !== -1 && rightIndex !== -1) {
+          const { left, right } = rollEdit(t.clips[leftIndex], t.clips[rightIndex], delta);
+          const updatedClips = [...t.clips];
+          updatedClips[leftIndex] = left;
+          updatedClips[rightIndex] = right;
+          return { ...t, clips: updatedClips };
+        }
+        return t;
+      }),
+    }));
+    saveProjectToDB();
+  },
+
+  insertClipAtPlayhead: (trackId: string, clipData: Partial<Clip>) => {
+    const { currentTime, addClipToTrack, pushHistory, saveProjectToDB } = get();
+    pushHistory();
+    const tempClipId = addClipToTrack(trackId, { ...clipData, startTime: currentTime });
+    const track = get().tracks.find((t) => t.id === trackId);
+    if (track) {
+      const insertedObj = track.clips.find((c) => c.id === tempClipId);
+      if (insertedObj) {
+        const otherClips = track.clips.filter((c) => c.id !== tempClipId);
+        const resultClips = insertClip(otherClips, insertedObj);
+        set((state) => ({
+          tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, clips: resultClips } : t)),
+        }));
+      }
+    }
+    saveProjectToDB();
+  },
+
+  overwriteClipAtPlayhead: (trackId: string, clipData: Partial<Clip>) => {
+    const { currentTime, addClipToTrack, pushHistory, saveProjectToDB } = get();
+    pushHistory();
+    const tempClipId = addClipToTrack(trackId, { ...clipData, startTime: currentTime });
+    const track = get().tracks.find((t) => t.id === trackId);
+    if (track) {
+      const overwriterObj = track.clips.find((c) => c.id === tempClipId);
+      if (overwriterObj) {
+        const otherClips = track.clips.filter((c) => c.id !== tempClipId);
+        const resultClips = overwriteClip(otherClips, overwriterObj);
+        set((state) => ({
+          tracks: state.tracks.map((t) => (t.id === trackId ? { ...t, clips: resultClips } : t)),
+        }));
+      }
+    }
+    saveProjectToDB();
+  },
+
 
   beginTransaction: () => {
     get().pushHistory();

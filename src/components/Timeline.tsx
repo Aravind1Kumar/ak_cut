@@ -692,6 +692,27 @@ export const Timeline: React.FC = () => {
             <span>Duplicate</span>
             <span className="text-[10px] text-gray-500">Ctrl+D</span>
           </button>
+          <button
+            onClick={() => {
+              useTimelineStore.getState().slipSelectedClip(0.5);
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-lg flex items-center justify-between"
+          >
+            <span>Slip Media (+0.5s)</span>
+            <span className="text-[10px] text-gray-500">Slip</span>
+          </button>
+          <button
+            onClick={() => {
+              useTimelineStore.getState().slideSelectedClip(0.5);
+              setClipContextMenu(null);
+            }}
+            className="w-full text-left px-2.5 py-1.5 hover:bg-cyan-500/20 hover:text-cyan-300 rounded-lg flex items-center justify-between"
+          >
+            <span>Slide Clip (+0.5s)</span>
+            <span className="text-[10px] text-gray-500">Slide</span>
+          </button>
+
 
           <button
             onClick={() => {
