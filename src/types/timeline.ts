@@ -132,7 +132,20 @@ export interface TextProps {
   arcAngle?: number;          // -180 to +180 deg (0 = straight)
 }
 
-export type ShapeType = 'rectangle' | 'roundedRectangle' | 'circle' | 'ellipse' | 'line' | 'triangle' | 'arrow' | 'star';
+export type ShapeType =
+  | 'rectangle'
+  | 'roundedRectangle'
+  | 'circle'
+  | 'ellipse'
+  | 'line'
+  | 'triangle'
+  | 'arrow'
+  | 'star'
+  | 'polygon'
+  | 'heart'
+  | 'diamond'
+  | 'hexagon'
+  | 'pentagon';
 
 export interface ShapeProps {
   type: ShapeType;
@@ -140,6 +153,13 @@ export interface ShapeProps {
   fillOpacity: number;
   borderColor: string;
   borderWidth: number;
+  strokeOpacity?: number;
+  cornerRadius?: number;
+  gradientFillEnabled?: boolean;
+  gradientColor2?: string;
+  gradientAngle?: number;
+  width?: number;
+  height?: number;
   animation?: 'none' | 'fadeIn' | 'scaleIn' | 'slideLeft' | 'slideRight';
 }
 

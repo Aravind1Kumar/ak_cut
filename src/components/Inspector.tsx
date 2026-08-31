@@ -139,6 +139,7 @@ export const Inspector: React.FC = () => {
     updateClipFilter,
     updateClipAudio,
     updateClipText,
+    updateClipShape,
     updateClipSpeedCurve,
     updateClip,
     addKeyframeToClip,
@@ -1175,6 +1176,149 @@ export const Inspector: React.FC = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* SHAPE GRAPHIC PROPERTIES SECTION */}
+      {selectedClip.type === 'shape' && selectedClip.shape && (
+        <div className="border border-cyan-500/40 rounded-2xl bg-dark-950/90 overflow-hidden shadow-2xl space-y-3 p-3">
+          <div className="flex items-center justify-between pb-2 border-b border-dark-800">
+            <span className="text-xs font-black text-cyan-300 uppercase tracking-wider flex items-center space-x-1.5">
+              <Square className="w-4 h-4 text-cyan-400" />
+              <span>SHAPE GEOMETRY & STYLE</span>
+            </span>
+          </div>
+
+          {/* Shape Type Selector Grid */}
+          <div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">SHAPE GEOMETRY</span>
+            <div className="grid grid-cols-4 gap-1.5">
+              {[
+                { label: 'Rect', type: 'rectangle' },
+                { label: 'R-Rect', type: 'roundedRectangle' },
+                { label: 'Circle', type: 'circle' },
+                { label: 'Ellipse', type: 'ellipse' },
+                { label: 'Triangle', type: 'triangle' },
+                { label: 'Star', type: 'star' },
+                { label: 'Hexagon', type: 'hexagon' },
+                { label: 'Pentagon', type: 'pentagon' },
+                { label: 'Diamond', type: 'diamond' },
+                { label: 'Heart', type: 'heart' },
+                { label: 'Line', type: 'line' },
+                { label: 'Arrow', type: 'arrow' },
+              ].map((item) => (
+                <button
+                  key={item.type}
+                  onClick={() => {
+                    pushHistory();
+                    updateClipShape(selectedClip!.id, { type: item.type as any });
+                  }}
+                  className={`py-1.5 px-1 rounded text-[10px] font-bold uppercase transition text-center truncate border ${
+                    selectedClip.shape?.type === item.type
+                      ? 'bg-cyan-500 text-black border-cyan-400 font-black shadow-md'
+                      : 'bg-dark-900 text-gray-300 border-dark-700 hover:border-cyan-500/50'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Fill Type & Colors */}
+          <div className="p-2.5 bg-dark-900 border border-dark-800 rounded-xl space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-gray-400 uppercase">FILL STYLE & COLOR</span>
+              <div className="flex items-center space-x-1 bg-dark-950 p-0.5 rounded text-[10px] font-bold">
+                <button
+                  onClick={() => {
+                    pushHistory();
+                    updateClipShape(selectedClip!.id, { gradientFillEnabled: false });
+                  }}
+                  className={`px-2 py-0.5 rounded ${!selectedClip.shape.gradientFillEnabled ? 'bg-cyan-500 text-black font-bold' : 'text-gray-400'}`}
+                >
+                  Solid
+                </button>
+                <button
+                  onClick={() => {
+                    pushHistory();
+                    updateClipShape(selectedClip!.id, { gradientFillEnabled: true, gradientColor2: selectedClip.shape?.gradientColor2 || '#00f2fe' });
+                  }}
+                  className={`px-2 py-0.5 rounded ${selectedClip.shape.gradientFillEnabled ? 'bg-cyan-500 text-black font-bold' : 'text-gray-400'}`}
+                >
+                  Gradient
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <div className="flex items-center space-x-2 bg-dark-950 p-1.5 rounded-lg border border-dark-700 flex-1">
+                <input
+                  type="color"
+                  value={selectedClip.shape.fillColor || '#00f2fe'}
+                  onChange={(e) => updateClipShape(selectedClip!.id, { fillColor: e.target.value })}
+                  className="w-6 h-6 rounded cursor-pointer border border-dark-600 bg-transparent"
+                />
+                <span className="text-[10px] font-mono text-cyan-300 uppercase font-bold">{selectedClip.shape.fillColor}</span>
+              </div>
+              {selectedClip.shape.gradientFillEnabled && (
+                <div className="flex items-center space-x-2 bg-dark-950 p-1.5 rounded-lg border border-dark-700 flex-1">
+                  <input
+                    type="color"
+                    value={selectedClip.shape.gradientColor2 || '#00f2fe'}
+                    onChange={(e) => updateClipShape(selectedClip!.id, { gradientColor2: e.target.value })}
+                    className="w-6 h-6 rounded cursor-pointer border border-dark-600 bg-transparent"
+                  />
+                  <span className="text-[10px] font-mono text-cyan-300 uppercase font-bold">{selectedClip.shape.gradientColor2}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Fill Opacity Slider */}
+            <div>
+              <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                Fill Opacity ({Math.round((selectedClip.shape.fillOpacity ?? 1.0) * 100)}%)
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={selectedClip.shape.fillOpacity ?? 1.0}
+                onChange={(e) => updateClipShape(selectedClip!.id, { fillOpacity: parseFloat(e.target.value) })}
+                onMouseDown={() => pushHistory()}
+                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+              />
+            </div>
+          </div>
+
+          {/* Stroke / Border Settings */}
+          <div className="p-2.5 bg-dark-900 border border-dark-800 rounded-xl space-y-2">
+            <span className="text-[10px] font-bold text-gray-400 uppercase block mb-1">STROKE BORDER & WIDTH</span>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-gray-400">Border Color</span>
+              <input
+                type="color"
+                value={selectedClip.shape.borderColor || '#ffffff'}
+                onChange={(e) => updateClipShape(selectedClip!.id, { borderColor: e.target.value })}
+                className="w-6 h-6 rounded cursor-pointer border border-dark-700 bg-transparent"
+              />
+            </div>
+            <div>
+              <span className="text-[10px] font-semibold text-gray-400 block mb-1">
+                Border Width ({selectedClip.shape.borderWidth || 0}px)
+              </span>
+              <input
+                type="range"
+                min="0"
+                max="30"
+                value={selectedClip.shape.borderWidth || 0}
+                onChange={(e) => updateClipShape(selectedClip!.id, { borderWidth: parseInt(e.target.value, 10) })}
+                onMouseDown={() => pushHistory()}
+                className="w-full accent-cyan-400 bg-dark-800 rounded-lg h-1.5 cursor-pointer"
+              />
+            </div>
           </div>
         </div>
       )}

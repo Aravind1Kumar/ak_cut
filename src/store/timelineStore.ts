@@ -14,6 +14,7 @@ import {
   TransitionProps,
   ChromaKeyProps,
   MaskProps,
+  ShapeProps,
   Keyframe,
   SpeedCurveType,
 } from '../types/timeline';
@@ -144,6 +145,7 @@ interface TimelineState {
   updateClipTransition: (clipId: string, transition: Partial<TransitionProps>) => void;
   updateClipChromaKey: (clipId: string, chromaKey: Partial<ChromaKeyProps>) => void;
   updateClipMask: (clipId: string, mask: Partial<MaskProps>) => void;
+  updateClipShape: (clipId: string, shape: Partial<ShapeProps>) => void;
   updateClipSpeedCurve: (clipId: string, curve: SpeedCurveType) => void;
   addKeyframeToClip: (clipId: string) => void;
   removeKeyframeFromClip: (clipId: string, keyframeId: string) => void;
@@ -590,6 +592,33 @@ export const useTimelineStore = create<TimelineState>((set, get) => ({
         ...track,
         clips: track.clips.map((clip) =>
           clip.id === clipId ? { ...clip, mask: { ...(clip.mask || DEFAULT_MASK), ...mask } } : clip
+        ),
+      })),
+    }));
+    get().saveProjectToDB();
+  },
+
+  updateClipShape: (clipId, shape) => {
+    get().pushHistory();
+    set((state) => ({
+      tracks: state.tracks.map((track) => ({
+        ...track,
+        clips: track.clips.map((clip) =>
+          clip.id === clipId
+            ? {
+                ...clip,
+                shape: {
+                  ...(clip.shape || {
+                    type: 'rectangle',
+                    fillColor: '#00f2fe',
+                    fillOpacity: 1.0,
+                    borderColor: '#ffffff',
+                    borderWidth: 2,
+                  }),
+                  ...shape,
+                },
+              }
+            : clip
         ),
       })),
     }));

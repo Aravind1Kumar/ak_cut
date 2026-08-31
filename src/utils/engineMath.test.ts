@@ -190,6 +190,27 @@ export function runDeterministicEngineValidation(): { passed: boolean; results: 
   const test12Pass = normPanLeft === -1.0 && normPanCenter === 0.0 && normPanRight === 1.0 && pannedLeftClip.audio.highPass === 100 && pannedRightClip.audio.lowPass === 8000;
   results.push(`Test 12 (Audio Stereo Pan & Equalizer Cutoff Engine): ${test12Pass ? 'PASS' : 'FAIL'} (Pan Left: ${normPanLeft}, Center: ${normPanCenter}, Right: ${normPanRight}, HP: ${pannedLeftClip.audio.highPass}Hz, LP: ${pannedRightClip.audio.lowPass}Hz)`);
 
-  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass && test10Pass && test11Pass && test12Pass;
+  // Test 13: Shape Graphic Fill, Gradient, & Stroke Geometry Engine
+  const rectShapeClip: Clip = {
+    ...mockClip,
+    type: 'shape',
+    shape: { type: 'roundedRectangle', fillColor: '#00f2fe', fillOpacity: 0.8, borderColor: '#ffffff', borderWidth: 4, cornerRadius: 25 },
+  };
+  const heartShapeClip: Clip = {
+    ...mockClip,
+    type: 'shape',
+    shape: { type: 'heart', fillColor: '#ef4444', fillOpacity: 1.0, borderColor: '#ff0055', borderWidth: 2, gradientFillEnabled: true, gradientColor2: '#a855f7' },
+  };
+
+  const test13Pass =
+    rectShapeClip.shape?.type === 'roundedRectangle' &&
+    rectShapeClip.shape.cornerRadius === 25 &&
+    rectShapeClip.shape.borderWidth === 4 &&
+    heartShapeClip.shape?.type === 'heart' &&
+    heartShapeClip.shape.gradientFillEnabled === true &&
+    heartShapeClip.shape.gradientColor2 === '#a855f7';
+  results.push(`Test 13 (Shape Graphic Fill, Gradient & Geometry Engine): ${test13Pass ? 'PASS' : 'FAIL'} (Rect CornerRadius: ${rectShapeClip.shape?.cornerRadius}px, Heart Gradient: ${heartShapeClip.shape?.gradientColor2})`);
+
+  const passed = test1Pass && test2Pass && test3Pass && test4Pass && test5Pass && test6Pass && determinismPass && test8Pass && test9Pass && test10Pass && test11Pass && test12Pass && test13Pass;
   return { passed, results };
 }
